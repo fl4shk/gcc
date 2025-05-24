@@ -52,7 +52,8 @@
 #define LINK_SPEC \
 	"%{mel:-EL}" \
     "%{static:-static} " \
-	"%{shared:%eshared is not supported} "
+	"%{shared:%eshared is not supported} " \
+	"%{--relax}"
 
 //#ifndef MULTILIB_DEFAULTS
 //#define MULTILIB_DEFAULTS { "meb" }
