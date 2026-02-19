@@ -1,3 +1,4 @@
+//extern void snowhousecpu_expand_compare_and_swap (rtx operands[]);
 extern int snowhousecpu_initial_elimination_offset (int from, int to);
 //extern bool snowhousecpu_32_bit_offset_address_p (rtx x);
 

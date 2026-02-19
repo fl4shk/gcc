@@ -22,6 +22,7 @@
 (include "constants.md")
 (include "constraints.md")
 (include "predicates.md")
+(include "atomic.md")
 
 
 
@@ -376,7 +377,6 @@
 ;;)
 
 
-
 (define_expand "mov<mode>"
   [(set (match_operand:MOV32 0 "nonimmediate_operand" "")
     (match_operand:MOV32 1
@@ -435,6 +435,28 @@
   str %1, %0        // *mov32: =B, r
   add %0, %1, 0x0   // *mov32: =r, d"
 )
+
+(define_insn "*sltusi3"
+  [(set (match_operand:SI 0 "register_operand" "=r,r")
+    (lt:SI
+      (match_operand:SI 1 "register_operand" "r,r")
+      (match_operand:SI 2 "general_operand" "r,i")))]
+  ""
+  "@
+  sltu %0, %1, %2   // sltsi3: =r, r, r
+  sltu %0, %1, %2   // sltsi3: =r, r, i"
+)
+(define_insn "*sltsi3"
+  [(set (match_operand:SI 0 "register_operand" "=r,r")
+    (lt:SI
+      (match_operand:SI 1 "register_operand" "r,r")
+      (match_operand:SI 2 "general_operand" "r,i")))]
+  ""
+  "@
+  slts %0, %1, %2   // sltsi3: =r, r, r
+  slts %0, %1, %2   // sltsi3: =r, r, i"
+)
+
 
 
 ;; --------
@@ -954,7 +976,8 @@
 (define_insn "jump"
   [(set (pc) (label_ref (match_operand 0)))]
   ""
-  "beq r0, r0, %l0")
+  "bl r0, %l0"
+  )
 
 
 ;;(define_expand "call"

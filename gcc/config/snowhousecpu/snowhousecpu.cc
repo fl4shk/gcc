@@ -778,6 +778,38 @@ snowhousecpu_print_operand (FILE *file, rtx x, int code)
   // "operand", and then do a break to let default handling
   // (zero-modifier) output the operand.
 }
+
+//static void
+//snowhousecpu_unique_section (tree decl, int reloc)
+//{
+//  bool one_only = DECL_ONE_ONLY (decl) && !HAVE_COMDAT_GROUP;
+//  const char *suffix = NULL;
+//  const char *linkonce;
+//
+//  switch (categorize_decl_for_section (decl, reloc))
+//  {
+//		case SECCAT_TEXT:
+//			suffix = one_only ? ".t" : ".text";
+//			break;
+//		default:
+//			default_unique_section (decl, reloc);
+//			return;
+//			break;
+//  }
+//  //id = DECL_ASSEMBLER_NAME (decl);
+//  //ultimate_transparent_alias_target (&id);
+//  //name = IDENTIFIER_POINTER (id);
+//  //name = targetm.strip_name_encoding (name);
+//
+//  /* If we're using one_only, then there needs to be a .gnu.linkonce
+//     prefix to the section name.  */
+//  linkonce = one_only ? ".gnu.linkonce" : "";
+//
+//  char *string = ACONCAT ((linkonce, suffix, NULL));
+//
+//  set_decl_section_name (decl, string);
+//	return;
+//}
 //static void
 //snowhousecpu_print_addr_const (FILE* file, rtx x)
 //{
@@ -976,6 +1008,11 @@ snowhousecpu_offset_address_reg_plus_imm_p (rtx x)
   return ret;
 }
 
+
+//void
+//snowhousecpu_expand_compare_and_swap (rtx operands[])
+//{
+//}
 
 // Compute the size of the local area and the size to be adjusted by the
 // prologue and epilogue.
@@ -1548,7 +1585,7 @@ snowhousecpu_expand_epilogue ()
 
   // Restore callee-saved registers
   int idx = 0;
-  for (int regno=FIRST_PSEUDO_REGISTER-1; regno>=0; --regno)
+  for (int regno=0; regno<FIRST_PSEUDO_REGISTER; ++regno)
   {
     if (snowhousecpu_regno_actually_callee_saved (regno))
     //if (snowhousecpu_regno_actually_callee_saved_no_hfp (regno))
@@ -1895,6 +1932,8 @@ snowhousecpu_setup_incoming_varargs
 #undef TARGET_PROMOTE_PROTOTYPES
 #define TARGET_PROMOTE_PROTOTYPES hook_bool_const_tree_true
 
+#undef TARGET_HAVE_LIBATOMIC
+#define TARGET_HAVE_LIBATOMIC false//true
 //#undef TARGET_PROMOTE_FUNCTION_MODE
 //#define TARGET_PROMOTE_FUNCTION_MODE
 //  default_promote_function_mode_always_promote
@@ -1981,6 +2020,8 @@ snowhousecpu_setup_incoming_varargs
 
 //#undef TARGET_PREFERRED_RELOAD_CLASS
 //#define TARGET_PREFERRED_RELOAD_CLASS snowhousecpu_preferred_reload_class
+//#undef TARGET_ASM_UNIQUE_SECTION
+//#define TARGET_ASM_UNIQUE_SECTION snowhousecpu_unique_section
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

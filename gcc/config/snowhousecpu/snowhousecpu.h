@@ -51,17 +51,23 @@
 #undef LINK_SPEC
 #define LINK_SPEC \
 	"%{mel:-EL}" \
-    "%{static:-static} " \
+	"%{static:-static} " \
 	"%{shared:%eshared is not supported} " \
-	"%{--relax}"
+	"--relax"
+
+	//"%{relax:--relax}"
 
 //#ifndef MULTILIB_DEFAULTS
 //#define MULTILIB_DEFAULTS { "meb" }
 //#endif
+//#undef DRIVER_SELF_SPECS
+//#define DRIVER_SELF_SPECS
+//	"link:-Wl,--relax"
 
 
 #define BITS_PER_WORD 32
 
+//#define MINIMUM_ATOMIC_ALIGNMENT 32
 #define BITS_BIG_ENDIAN 0
 #define BYTES_BIG_ENDIAN 0 //1
 #define WORDS_BIG_ENDIAN 0 //1
@@ -253,7 +259,7 @@
 
 // Registers clobbered upon function call
 // "r1"-"r6" used for arguments
-// "r0" used for return value
+// "r1" used for return value
 // "lr" clobbered upon function call
 //// "flags" clobbered upon function call
 #define CALL_REALLY_USED_REGISTERS \
@@ -462,8 +468,8 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 
 #define HAS_INIT_SECTION
 
-#undef INIT_SECTION_ASM_OP
-#undef FINI_SECTION_ASM_OP
+//#undef INIT_SECTION_ASM_OP
+//#undef FINI_SECTION_ASM_OP
 #define INIT_ARRAY_SECTION_ASM_OP CTORS_SECTION_ASM_OP
 #define FINI_ARRAY_SECTION_ASM_OP DTORS_SECTION_ASM_OP
 
@@ -566,7 +572,7 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 #define GLOBAL_ASM_OP ".global "
 
 
-#define INIT_SECTION_ASM_OP ".section .init"
+//#define INIT_SECTION_ASM_OP ".section .init"
 
 
 // Passing Function Arguments
@@ -637,6 +643,7 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 //// [addr+0x0:0xaa, addr+0x1:0xbb, addr+0x2:0xcc, addr+0x3:0xdd]
 //// 
 
+//#define TARGET_HAVE_LIBATOMIC true
 
 // Define this macro if pushing a word onto the stack moves the stack
 // pointer to a smaller address.
