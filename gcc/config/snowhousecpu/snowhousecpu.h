@@ -101,8 +101,7 @@
 #define WCHAR_TYPE_SIZE BITS_PER_WORD
 
 //#undef INTMAX_TYPE
-//#define INTMAX_TYPE "long long"
-//
+//#define INTMAX_TYPE "long long" //
 //#undef UINTMAX_TYPE
 //#define UINTMAX_TYPE "unsigned long long"
 
@@ -171,6 +170,7 @@
     "r8", "r9", "r10", "r11", \
     "r12", "lr", "fp", "sp", \
     "fake_fp", "fake_ap", \
+    "hi", \
     /*"flags",*/ \
     /* "hi", "lo", */ \
     /*"ids", "ira", "ie", "ity", "sty",*/ \
@@ -195,6 +195,7 @@
 #define SNOWHOUSECPU_SP 14
 #define SNOWHOUSECPU_FAKE_FP 15
 #define SNOWHOUSECPU_FAKE_AP 16
+#define SNOWHOUSECPU_HI 17
 //#define SNOWHOUSECPU_FAKE_FLAGS 17
 /*
 #define SNOWHOUSECPU_HI 19
@@ -209,7 +210,7 @@
 #define SNOWHOUSECPU_PC 25
 */
 //#define SNOWHOUSECPU_PC 18
-#define SNOWHOUSECPU_PC 17
+#define SNOWHOUSECPU_PC 18
 
 #define SNOWHOUSECPU_FIRST_ARG_REGNUM \
   (SNOWHOUSECPU_R1)
@@ -253,6 +254,7 @@
     0, 0, 0, 0,   /* r8, r9, r10, r11 */ \
     0, 0, 1, 1,   /* r12, lr, fp, sp */ \
     1, 1,         /* fake_fp, fake_ap */ \
+    0,            /* hi */ \
     /*1,*/            /* fake_flags */ \
     1,            /* pc */ \
   }
@@ -261,6 +263,8 @@
 // "r1"-"r6" used for arguments
 // "r1" used for return value
 // "lr" clobbered upon function call
+// "hi" might be easier to just mark as clobbered so I don't need specific
+// stack operations for it in the CPU's instruction set!
 //// "flags" clobbered upon function call
 #define CALL_REALLY_USED_REGISTERS \
   { \
@@ -270,6 +274,7 @@
     0, 0, 0, 0,   /* r8, r9, r10, r11 */ \
     0, 1, 1, 1,   /* r12, lr, fp, sp */ \
     1, 1,         /* fake_fp, fake_ap */ \
+    1,            /* hi */ \
     /*1,*/            /* fake_flags */ \
     1,            /* pc */ \
   }
@@ -293,6 +298,8 @@ enum reg_class
   //FULL_PRODUCT_RESULT_REGS,
   //FULL_PRODUCT_HIGH_PART_REGS,
   //FULL_PRODUCT_LOW_PART_REGS,
+  HI_REGS,
+  GENERAL_OR_HI_REGS,
   FP_REGS,
   SP_REGS,
   //CC_REGS,
@@ -311,6 +318,8 @@ enum reg_class
     /* "FULL_PRODUCT_RESULT_REGS", */ \
     /* "FULL_PRODUCT_HIGH_PART_REGS", */ \
     /* "FULL_PRODUCT_LOW_PART_REGS", */ \
+    "HI_REGS", \
+    "GENERAL_OR_HI_REGS", \
     "FP_REGS", \
     "SP_REGS", \
     /*"CC_REGS",*/ \
@@ -340,6 +349,11 @@ enum reg_class
       /* FULL_PRODUCT_RESULT_REGS */ \
     /* {1 << SNOWHOUSECPU_R0}, */ /* FULL_PRODUCT_HIGH_PART_REGS */ \
     /* {1 << SNOWHOUSECPU_R1}, */ /* FULL_PRODUCT_LOW_PART_REGS */ \
+    {1 << SNOWHOUSECPU_HI}, /* HI_REGS */ \
+    { /* GENERAL_OR_HI_REGS */ \
+      (((1 << SNOWHOUSECPU_NUM_GENERAL_REGS) - 1) << SNOWHOUSECPU_FIRST_GENERAL_REGNUM) \
+      | (1 << SNOWHOUSECPU_HI) \
+    }, \
     {1 << SNOWHOUSECPU_FP}, /* FP_REGS */ \
     {1 << SNOWHOUSECPU_SP}, /* SP_REGS */ \
     /* {1 << SNOWHOUSECPU_FAKE_FLAGS}, */ /* CC_REGS */ \
@@ -356,8 +370,7 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
   // r0, 
   //FULL_PRODUCT_HIGH_PART_REGS, 
   //r1, r2, r3
-  GENERAL_REGS,
-    GENERAL_REGS, GENERAL_REGS,
+  GENERAL_REGS, GENERAL_REGS, GENERAL_REGS,
 
   // r4, r5, r6, r7
   GENERAL_REGS, GENERAL_REGS, GENERAL_REGS, GENERAL_REGS,
@@ -370,6 +383,9 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 
   // fake_fp, fake_ap
   GENERAL_REGS, GENERAL_REGS,
+
+  // hi
+  HI_REGS,
 
   //// flags,
   //CC_REGS,
@@ -435,9 +451,6 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 // to/from CCmode is incomplete.
 //// (Change this later as it *is* possible to back up/restore the flags)
 #define AVOID_CCMODE_COPIES 1
-
-
-
 
 
 // The Overall Framework of an Assembler File
@@ -894,7 +907,7 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 // and sign extend loads do this.
 #define LOAD_EXTEND_OP(MEM) ZERO_EXTEND
 
-// Short immediates definitely do sign extend.
+// Short immediates definitely do sign extend (besides shift-by-immediate).
 #define SHORT_IMMEDIATES_SIGN_EXTEND 1
 
 // A number, the maximum number of registers that can appear in a

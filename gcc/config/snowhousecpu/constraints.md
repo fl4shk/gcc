@@ -26,6 +26,9 @@
 (define_register_constraint "d" "PC_REGS")
 (define_register_constraint "t" "SP_REGS")
 (define_register_constraint "q" "FP_REGS")
+(define_register_constraint "R" "GENERAL_REGS")
+(define_register_constraint "w" "HI_REGS")
+(define_register_constraint "W" "GENERAL_OR_HI_REGS")
 
 (define_memory_constraint "B"
     "An offset adddress (register + immediate)"

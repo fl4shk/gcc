@@ -964,7 +964,10 @@ snowhousecpu_offset_address_reg_plus_imm_p (rtx x)
       snowhousecpu_constraint_debug_fprintf (stderr, "x SUBREG:\n");
       snowhousecpu_constraint_debug_rtx (x);
     }
-    if (GET_CODE (x) == REG)
+    if (
+        GET_CODE (x) == REG
+        && REGNO_OK_FOR_BASE_P (REGNO (x))
+    )
     {
       ret = true;
     }
@@ -994,6 +997,7 @@ snowhousecpu_offset_address_reg_plus_imm_p (rtx x)
 
       if (
         GET_CODE (left_0) == REG
+        && REGNO_OK_FOR_BASE_P (REGNO (left_0))
         && snowhousecpu_absolute_ex (right_0)
       )
       {
@@ -1808,9 +1812,9 @@ snowhousecpu_setup_incoming_varargs
       (Pmode,
       gen_rtx_REG (SImode, ARG_POINTER_REGNUM),
       GEN_INT (UNITS_PER_WORD * (regno - 1)));
-	//rtx slot = gen_rtx_PLUS (Pmode,
-	//			gen_rtx_REG (SImode, ARG_POINTER_REGNUM),
-	//			GEN_INT (UNITS_PER_WORD * regno /*(3 + (regno-2))*/));
+        //rtx slot = gen_rtx_PLUS (Pmode,
+        //                      gen_rtx_REG (SImode, ARG_POINTER_REGNUM),
+        //                      GEN_INT (UNITS_PER_WORD * regno /*(3 + (regno-2))*/));
     
     emit_move_insn (gen_rtx_MEM (SImode, slot), reg);
   }

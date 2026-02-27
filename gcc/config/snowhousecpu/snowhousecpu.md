@@ -59,13 +59,70 @@
 )
 
 
-(define_insn "mulsi3"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-    (mult:SI
-      (match_operand:SI 1 "register_operand" "r")
-      (match_operand:SI 2 "register_operand" "r")))]
+;;(define_insn "mulsi3"
+;;  [(parallel [
+;;    (set (match_operand:SI 0 "register_operand" "=r")
+;;        (mult:SI
+;;        (match_operand:SI 1 "register_operand" "r")
+;;        (match_operand:SI 2 "register_operand" "r")))
+;;    (clobber (reg:SI REG_HI))
+;;  ])]
+;;  ""
+;;  "umulw %0, %1, %2"
+;;)
+(define_expand "umulsidi3"
+  [(set (match_operand:DI 0 "register_operand")
+    (mult:DI
+      (zero_extend:DI (match_operand:SI 1 "register_operand"))
+      (zero_extend:DI (match_operand:SI 2 "register_operand"))))]
   ""
-  "mul %0, %1, %2"
+  {
+    emit_insn (gen_umull
+      (gen_lowpart (SImode, operands[0]),
+      gen_highpart (SImode, operands[0]),
+      operands[1], operands[2]));
+    DONE;
+  }
+)
+(define_expand "smulsidi3"
+  [(set (match_operand:DI 0 "register_operand")
+    (mult:DI
+      (sign_extend:DI (match_operand:SI 1 "register_operand"))
+      (sign_extend:DI (match_operand:SI 2 "register_operand"))))]
+  ""
+  {
+    emit_insn (gen_smull
+      (gen_lowpart (SImode, operands[0]),
+      gen_highpart (SImode, operands[0]),
+      operands[1], operands[2]));
+    DONE;
+  }
+)
+(define_insn "umull"
+  [(set (match_operand:SI 0 "register_operand" "=w")
+        (mult:SI
+         (match_operand:SI 2 "register_operand" "r")
+         (match_operand:SI 3 "register_operand" "r")))
+   (set (match_operand:SI 1 "register_operand" "=r")
+        (truncate:SI
+         (lshiftrt:DI
+          (mult:DI (zero_extend:DI (match_dup 2)) (zero_extend:DI (match_dup 3)))
+          (const_int 32))))]
+  ""
+  "umulw\t\t%1, %2, %3"
+)
+(define_insn "smull"
+  [(set (match_operand:SI 0 "register_operand" "=w")
+        (mult:SI
+         (match_operand:SI 2 "register_operand" "r")
+         (match_operand:SI 3 "register_operand" "r")))
+   (set (match_operand:SI 1 "register_operand" "=r")
+        (truncate:SI
+         (lshiftrt:DI
+          (mult:DI (sign_extend:DI (match_dup 2)) (sign_extend:DI (match_dup 3)))
+          (const_int 32))))]
+  ""
+  "smulw\t\t%1, %2, %3"
 )
 ;; --------
 ;; TODO: come back to this when more multiply/divide instructions exist in SnowHouseCpu
@@ -418,18 +475,19 @@
 (define_insn "*mov32"
   [(set (match_operand:MOV32 0
     "nonimmediate_operand"
-    "=r,r,r,B,r"
+    "=r,W,r,r,B,r"
     )
     (match_operand:MOV32 1 
       "snowhousecpu_general_mov_src_operand"
-      "r,i,B,r,d"
+      "W,r,i,B,r,d"
       ))]
 
   "register_operand (operands[0], <MODE>mode)
     || register_operand (operands[1], <MODE>mode)"
   ;;""
   "@
-  cpy %0, %1        // *mov32: =r, r
+  cpy %0, %1        // *mov32: =r, W
+  cpy %0, %1        // *mov32: =W, r
   cpy %0, %1        // *mov32: =r, i
   ldr %0, %1        // *mov32: =r, B
   str %1, %0        // *mov32: =B, r
@@ -555,11 +613,11 @@
 
 (define_insn "*mov16"
   [(set (match_operand:MOV16 0 "nonimmediate_operand"
-    "=r,r,r,B"
+    "=r,W,r,r,B"
     ;;"=r,r,r,W"
     )
     (match_operand:MOV16 1 "snowhousecpu_general_mov_src_operand"
-     "r,i,B,r"
+     "W,r,i,B,r"
      ;;"r,i,W,r"
      ))]
 
@@ -567,7 +625,8 @@
   || register_operand (operands[1], <MODE>mode)"
   ;;""
   "@
-  cpy %0, %1    // *mov16: =r, r
+  cpy %0, %1    // *mov16: =r, W
+  cpy %0, %1    // *mov16: =W, r
   cpy %0, %1    // *mov16: =r, i
   lduh %0, %1    // *mov16: =r, B
   sth %1, %0    // *mov16: =B, r"
@@ -590,17 +649,18 @@
 ;; Use this
 (define_insn "*mov8"
   [(set (match_operand:MOV8 0 "nonimmediate_operand"
-    "=r,r,r,B"
+    "=r,W,r,r,B"
     )
     (match_operand:MOV8 1 "snowhousecpu_general_mov_src_operand"
-      "r,i,B,r"
+      "W,r,i,B,r"
       ))]
 
   "register_operand (operands[0], <MODE>mode)
   || register_operand (operands[1], <MODE>mode)"
   ;;""
   "@
-  cpy %0, %1    // *mov8: =r, r
+  cpy %0, %1    // *mov8: =r, W
+  cpy %0, %1    // *mov8: =W, r
   cpy %0, %1    // *mov8: =r, i
   ldub %0, %1    // *mov8: =r, B
   stb %1, %0    // *mov8: =B, r"

@@ -26,6 +26,7 @@
   (REG_FP 13)
   (REG_SP 14)
   ;;(REG_FLAGS 18)
-  (REG_PC 17)
+  (REG_HI 17)
+  (REG_PC 18)
   ;;(REG_FAKE_FLAGS 18)
   ])
