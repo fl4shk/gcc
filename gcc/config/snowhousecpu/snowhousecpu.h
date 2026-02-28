@@ -164,10 +164,11 @@
 // Registers
 #define REGISTER_NAMES \
   { \
-    "hi", \
     /*"r0", */ \
     "r1", "r2", "r3", \
-    "r4", "r5", "r6", "r7", \
+    "r4", "r5", "r6", \
+    "hi", \
+    "r7", \
     "r8", "r9", "r10", "r11", \
     "r12", "lr", "fp", "sp", \
     "fake_fp", "fake_ap", \
@@ -179,13 +180,14 @@
   }
 
 //#define SNOWHOUSECPU_R0 0
-#define SNOWHOUSECPU_HI 0
-#define SNOWHOUSECPU_R1 1
-#define SNOWHOUSECPU_R2 2
-#define SNOWHOUSECPU_R3 3
-#define SNOWHOUSECPU_R4 4
-#define SNOWHOUSECPU_R5 5
-#define SNOWHOUSECPU_R6 6
+//#define SNOWHOUSECPU_HI 0
+#define SNOWHOUSECPU_R1 0
+#define SNOWHOUSECPU_R2 1
+#define SNOWHOUSECPU_R3 2
+#define SNOWHOUSECPU_R4 3
+#define SNOWHOUSECPU_R5 4
+#define SNOWHOUSECPU_R6 5
+#define SNOWHOUSECPU_HI 6
 #define SNOWHOUSECPU_R7 7
 #define SNOWHOUSECPU_R8 8
 #define SNOWHOUSECPU_R9 9
@@ -222,12 +224,29 @@
 #define SNOWHOUSECPU_NUM_ARG_REGS \
   (SNOWHOUSECPU_LAST_ARG_REGNUM - SNOWHOUSECPU_FIRST_ARG_REGNUM + 1)
 
-#define SNOWHOUSECPU_FIRST_GENERAL_REGNUM \
+#define SNOWHOUSECPU_FIRST_GENERAL_REGNUM_FIRST_HALF \
   (SNOWHOUSECPU_R1)
-#define SNOWHOUSECPU_LAST_GENERAL_REGNUM \
+#define SNOWHOUSECPU_LAST_GENERAL_REGNUM_FIRST_HALF \
+  (SNOWHOUSECPU_R6)
+
+#define SNOWHOUSECPU_NUM_GENERAL_REGS_FIRST_HALF \
+  ( \
+    SNOWHOUSECPU_LAST_GENERAL_REGNUM_FIRST_HALF \
+    - SNOWHOUSECPU_FIRST_GENERAL_REGNUM_FIRST_HALF \
+    + 1 \
+  )
+
+#define SNOWHOUSECPU_FIRST_GENERAL_REGNUM_SECOND_HALF \
+  (SNOWHOUSECPU_R7)
+#define SNOWHOUSECPU_LAST_GENERAL_REGNUM_SECOND_HALF \
   (SNOWHOUSECPU_FAKE_AP)
-#define SNOWHOUSECPU_NUM_GENERAL_REGS \
-  (SNOWHOUSECPU_LAST_GENERAL_REGNUM - SNOWHOUSECPU_FIRST_GENERAL_REGNUM + 1)
+
+#define SNOWHOUSECPU_NUM_GENERAL_REGS_SECOND_HALF \
+  ( \
+    SNOWHOUSECPU_LAST_GENERAL_REGNUM_SECOND_HALF \
+    - SNOWHOUSECPU_FIRST_GENERAL_REGNUM_SECOND_HALF \
+    + 1 \
+  )
 #define STATIC_CHAIN_REGNUM \
   (SNOWHOUSECPU_R12)
   //(SNOWHOUSECPU_LAST_ARG_REGNUM + 1)
@@ -251,10 +270,11 @@
 // Registers with fixed purposes marked with a "1". Registers here
 #define FIXED_REGISTERS \
   { \
-    0,            /* hi */ \
     /*0,*/ /* r0, */ \
     0, 0, 0,      /* r1, r2, r3 */ \
-    0, 0, 0, 0,   /* r4, r5, r6, r7 */ \
+    0, 0, 0,      /* r4, r5, r6 */ \
+    0,            /* hi */ \
+    0,            /* r7 */ \
     0, 0, 0, 0,   /* r8, r9, r10, r11 */ \
     0, 0, 1, 1,   /* r12, lr, fp, sp */ \
     1, 1,         /* fake_fp, fake_ap */ \
@@ -271,10 +291,11 @@
 //// "flags" clobbered upon function call
 #define CALL_REALLY_USED_REGISTERS \
   { \
-    1,            /* hi */ \
     /*1, */ /* r0 */ \
     1, 1, 1,      /* r1, r2, r3 */ \
-    1, 1, 1, 0,   /* r4, r5, r6, r7 */ \
+    1, 1, 1,      /* r4, r5, r6 */ \
+    1,            /* hi */ \
+    0,            /* r7 */ \
     0, 0, 0, 0,   /* r8, r9, r10, r11 */ \
     0, 1, 1, 1,   /* r12, lr, fp, sp */ \
     1, 1,         /* fake_fp, fake_ap */ \
@@ -284,13 +305,13 @@
 
 #define REG_ALLOC_ORDER \
  { \
-   1, 2, 3,       /* r1, r2, r3 */ \
-   4, 5, 6,       /* r4, r5, r6 */ \
+   0, 1, 2,       /* r1, r2, r3 */ \
+   3, 4, 5,       /* r4, r5, r6 */ \
+   6,             /* hi */ \
    7,             /* r7 */ \
    8, 9, 10, 11,           /* r8, r9, r10, r11 */ \
    12, 13, 14, 15,  /* r12, lr, fp, sp */ \
    16, 17,        /* fake_fp, fake_ap */ \
-   0,             /* hi */ \
    18,            /* pc */ \
  }
 
@@ -349,8 +370,16 @@ enum reg_class
 #define REG_CLASS_CONTENTS \
   { \
     {0x0}, /* NO_REGS */ \
-    {((1 << SNOWHOUSECPU_NUM_GENERAL_REGS) - 1) \
-      << SNOWHOUSECPU_FIRST_GENERAL_REGNUM}, /* GENERAL_REGS */ \
+    { \
+      ( \
+        ((1 << SNOWHOUSECPU_NUM_GENERAL_REGS_FIRST_HALF) - 1) \
+        << SNOWHOUSECPU_FIRST_GENERAL_REGNUM_FIRST_HALF \
+      ) \
+      | ( \
+        ((1 << SNOWHOUSECPU_NUM_GENERAL_REGS_SECOND_HALF) - 1) \
+        << SNOWHOUSECPU_FIRST_GENERAL_REGNUM_SECOND_HALF \
+      ) \
+    }, /* GENERAL_REGS */ \
     /*{0x3ffff},*/ /* GENERAL_REGS */ \
     /* {(1 << SNOWHOUSECPU_R0) | (1 << SNOWHOUSECPU_R1)}, */ \
       /* FULL_PRODUCT_RESULT_REGS */ \
@@ -380,16 +409,20 @@ enum reg_class
 static const enum reg_class
 snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 {
-  // hi
-  HI_REGS,
 
   // r0, 
   //FULL_PRODUCT_HIGH_PART_REGS, 
   //r1, r2, r3
   GENERAL_REGS, GENERAL_REGS, GENERAL_REGS,
 
-  // r4, r5, r6, r7
-  GENERAL_REGS, GENERAL_REGS, GENERAL_REGS, GENERAL_REGS,
+  // r4, r5, r6, 
+  GENERAL_REGS, GENERAL_REGS, GENERAL_REGS,
+
+  // hi
+  HI_REGS,
+
+  //r7
+  GENERAL_REGS,
 
   // r8, r9, r10, r11
   GENERAL_REGS, GENERAL_REGS, GENERAL_REGS, GENERAL_REGS,
