@@ -125,20 +125,11 @@ update_stack_args_size (struct machine_function* self)
 {
   // Padding needed for each element of the frame.
   self->stack_args_size = crtl->args.pretend_args_size;
-
-  // Arguments on the stack should already be aligned?
-  //// Align to the stack alignment
-  //int padding_stack_args = self->stack_args_size % STACK_ALIGNMENT;
-
-  //if (padding_stack_args)
-  //{
-  //  padding_stack_args = STACK_ALIGNMENT 
-  //      - padding_stack_args;
-  //}
-
-  //self->stack_args_size += padding_stack_args;
-  //snowhousecpu_debug_fprintf (stderr, "update_stack_args_size (): %i\n",
-  //  self->stack_args_size);
+  //fprintf (
+  //  stderr,
+  //  "snowhousecpu debug: update_stack_args_size(): %u\n",
+  //  self->stack_args_size
+  //);
 }
 
 static void
@@ -147,18 +138,11 @@ update_local_vars_size (struct machine_function* self)
   // Padding needed for each element of the frame.
   self->local_vars_size = SNOWHOUSECPU_STACK_ALIGN
     (HOST_WIDE_INT (get_frame_size ()));
-
-  // Align to the stack alignment
-  //int padding_locals = self->local_vars_size % STACK_ALIGNMENT;
-
-  //if (padding_locals)
-  //{
-  //  padding_locals = STACK_ALIGNMENT - padding_locals;
-  //}
-
-  //self->local_vars_size += padding_locals;
-  //snowhousecpu_debug_fprintf (stderr, "update_local_vars_size (): %i\n",
-  //  self->local_vars_size);
+  //fprintf (
+  //  stderr,
+  //  "snowhousecpu debug: update_local_vars_size(): %u\n",
+  //  self->local_vars_size
+  //);
 }
 
 static void
@@ -174,10 +158,20 @@ update_callee_saved_reg_size (struct machine_function* self)
     //if (df_regs_ever_live_p (regno) && !call_used_or_fixed_reg_p (regno))
     {
       self->callee_saved_reg_size += UNITS_PER_WORD;
+      //fprintf (
+      //  stderr,
+      //  "snowhousecpu debug: update_callee_saved_reg_size(): INNER: %u\n",
+      //  regno
+      //);
     }
   }
   //snowhousecpu_debug_fprintf (stderr, "update_callee_saved_reg_size (): %i\n",
   //  self->callee_saved_reg_size);
+  //fprintf (
+  //  stderr,
+  //  "snowhousecpu debug: update_callee_saved_reg_size(): END: %u\n",
+  //  self->callee_saved_reg_size
+  //);
 }
 
 static void
@@ -189,6 +183,11 @@ update_outgoing_args_size (struct machine_function* self)
       : 0;
   //snowhousecpu_debug_fprintf (stderr, "update_outgoing_args_size (): %i\n",
   //  self->outgoing_args_size);
+  //fprintf (
+  //  stderr,
+  //  "snowhousecpu debug: update_outgoing_args_size(): %u\n",
+  //  self->outgoing_args_size
+  //);
 }
 
 static void
@@ -218,6 +217,11 @@ update_size_for_adjusting_sp (struct machine_function* self)
     + self->outgoing_args_size;
   //snowhousecpu_debug_fprintf (stderr, "update_size_for_adjusting_sp (): %i\n",
   //  self->size_for_adjusting_sp);
+  //fprintf (
+  //  stderr,
+  //  "snowhousecpu debug: update_size_for_adjusting_sp(): %u\n",
+  //  self->size_for_adjusting_sp
+  //);
 }
 static void
 update_static_stack_size (struct machine_function* self)
@@ -231,6 +235,11 @@ update_static_stack_size (struct machine_function* self)
     + self->outgoing_args_size;
   //snowhousecpu_debug_fprintf (stderr, "update_static_stack_size (): %i\n",
   //  self->static_stack_size);
+  //fprintf (
+  //  stderr,
+  //  "snowhousecpu debug: update_static_stack_size(): %u\n",
+  //  self->static_stack_size
+  //);
 }
 
 static void
@@ -589,7 +598,7 @@ snowhousecpu_legitimate_address_p (machine_mode mode, rtx x, bool strict_p,
     {
       if (snowhousecpu_valid_base_reg_p (x, strict_p))
       {
-	return true;
+        return true;
       }
     }
     if (GET_CODE (x) == PLUS
@@ -606,10 +615,10 @@ snowhousecpu_legitimate_address_p (machine_mode mode, rtx x, bool strict_p,
       snowhousecpu_debug_rtx (right_0);
       if (snowhousecpu_valid_base_reg_p (left_0, strict_p))
       {
-	if (snowhousecpu_absolute_ex (right_0))
-	{
-	  return true;
-	}
+        if (snowhousecpu_absolute_ex (right_0))
+        {
+          return true;
+        }
       }
     }
     //else if (GET_CODE == REG)
@@ -788,13 +797,13 @@ snowhousecpu_print_operand (FILE *file, rtx x, int code)
 //
 //  switch (categorize_decl_for_section (decl, reloc))
 //  {
-//		case SECCAT_TEXT:
-//			suffix = one_only ? ".t" : ".text";
-//			break;
-//		default:
-//			default_unique_section (decl, reloc);
-//			return;
-//			break;
+//              case SECCAT_TEXT:
+//                      suffix = one_only ? ".t" : ".text";
+//                      break;
+//              default:
+//                      default_unique_section (decl, reloc);
+//                      return;
+//                      break;
 //  }
 //  //id = DECL_ASSEMBLER_NAME (decl);
 //  //ultimate_transparent_alias_target (&id);
@@ -808,7 +817,7 @@ snowhousecpu_print_operand (FILE *file, rtx x, int code)
 //  char *string = ACONCAT ((linkonce, suffix, NULL));
 //
 //  set_decl_section_name (decl, string);
-//	return;
+//      return;
 //}
 //static void
 //snowhousecpu_print_addr_const (FILE* file, rtx x)
@@ -842,23 +851,23 @@ snowhousecpu_print_operand_address (FILE* file,
     switch (GET_CODE (x))
     {
       case LABEL_REF:
-	//output_addr_const (file, x);
-	//break;
+        //output_addr_const (file, x);
+        //break;
       case SYMBOL_REF:
-	//fprintf (file, "\"");
-	output_addr_const (file, x);
-	//fprintf (file, "\"");
-	break;
+        //fprintf (file, "\"");
+        output_addr_const (file, x);
+        //fprintf (file, "\"");
+        break;
       case CONST:
       //case CONST_INT:
-	//fprintf (file, "<some_symbol_ref>");
+        //fprintf (file, "<some_symbol_ref>");
 
-	//fprintf (file, "\"");
-	output_addr_const (file, x);
-	//fprintf (file, "\"");
-	break;
+        //fprintf (file, "\"");
+        output_addr_const (file, x);
+        //fprintf (file, "\"");
+        break;
       default:
-	gcc_unreachable ();
+        gcc_unreachable ();
     }
   };
   rtx left, right;
@@ -876,21 +885,21 @@ snowhousecpu_print_operand_address (FILE* file,
       fprintf (file, "%s, ", reg_names[REGNO (left)]);
       if (GET_CODE (right) == CONST_INT)
       {
-	fprintf (file, "%ld", INTVAL (right));
+        fprintf (file, "%ld", INTVAL (right));
       }
       else if (
-	// CONSTANT_P (right)
-	snowhousecpu_absolute (right)
+        // CONSTANT_P (right)
+        snowhousecpu_absolute (right)
       )
       {
-	//fprintf (file, "\"");
-	//output_addr_const (file, right);
-	//fprintf (file, "\"");
-	snowhousecpu_print_addr_const (file, right);
+        //fprintf (file, "\"");
+        //output_addr_const (file, right);
+        //fprintf (file, "\"");
+        snowhousecpu_print_addr_const (file, right);
       }
       else
       {
-	gcc_unreachable ();
+        gcc_unreachable ();
       }
     }
     else
@@ -959,14 +968,14 @@ snowhousecpu_offset_address_reg_plus_imm_p (rtx x)
     {
       //left_0 = SUBREG_REG (left_0);
       x
-	= simplify_gen_subreg (SImode, x, DImode,
-	  subreg_lowpart_offset (SImode, DImode));
+        = simplify_gen_subreg (SImode, x, DImode,
+          subreg_lowpart_offset (SImode, DImode));
       snowhousecpu_constraint_debug_fprintf (stderr, "x SUBREG:\n");
       snowhousecpu_constraint_debug_rtx (x);
     }
     if (
-        GET_CODE (x) == REG
-        && REGNO_OK_FOR_BASE_P (REGNO (x))
+      GET_CODE (x) == REG
+      && REGNO_OK_FOR_BASE_P (REGNO (x))
     )
     {
       ret = true;
@@ -1118,7 +1127,7 @@ snowhousecpu_return_in_memory
 // Return non-zero if the function argument described by TYPE is to be
 // passed by reference.
 static bool 
-snowhousecpu_pass_by_reference (cumulative_args_t cum ATTRIBUTE_UNUSED,
+snowhousecpu_pass_by_reference (cumulative_args_t ca ATTRIBUTE_UNUSED,
   //machine_mode mode, const_tree type, bool named ATTRIBUTE_UNUSED
   const function_arg_info& arg
   )
@@ -1135,20 +1144,20 @@ snowhousecpu_pass_by_reference (cumulative_args_t cum ATTRIBUTE_UNUSED,
    that hold arguments.  Given a new arg, return the number of bytes
    that fit in argument passing registers.  */
 static int
-snowhousecpu_arg_partial_bytes (cumulative_args_t cum_v ATTRIBUTE_UNUSED,
+snowhousecpu_arg_partial_bytes (cumulative_args_t ca_v,
   //machine_mode mode, tree type, bool named
   const function_arg_info& arg
 )
 {
-  CUMULATIVE_ARGS *cum = get_cumulative_args (cum_v);
+  CUMULATIVE_ARGS *ca = get_cumulative_args (ca_v);
   int bytes_left, size;
 
-  if (*cum >= SNOWHOUSECPU_NUM_ARG_REGS)
+  if (*ca >= SNOWHOUSECPU_NUM_ARG_REGS)
   {
     return 0;
   }
 
-  if (snowhousecpu_pass_by_reference (cum_v, arg))
+  if (snowhousecpu_pass_by_reference (ca_v, arg))
   {
     size = UNITS_PER_WORD;
   }
@@ -1180,7 +1189,7 @@ snowhousecpu_arg_partial_bytes (cumulative_args_t cum_v ATTRIBUTE_UNUSED,
 // Return the next register to be used to hold a function argument or
 // NULL_RTX if there's no more space.
 static rtx
-snowhousecpu_function_arg (cumulative_args_t cum_v,
+snowhousecpu_function_arg (cumulative_args_t ca_v,
   //machine_mode mode, const_tree type ATTRIBUTE_UNUSED,
   //bool named ATTRIBUTE_UNUSED
   const function_arg_info& arg
@@ -1192,20 +1201,29 @@ snowhousecpu_function_arg (cumulative_args_t cum_v,
   //  return NULL_RTX;
   //}
 
-  CUMULATIVE_ARGS* cum = get_cumulative_args (cum_v);
+  CUMULATIVE_ARGS* ca = get_cumulative_args (ca_v);
 
-  if ((*cum) <= SNOWHOUSECPU_LAST_ARG_REGNUM)
+  if (
+    //(*ca) <= SNOWHOUSECPU_LAST_ARG_REGNUM - 1
+    //(*ca) < SNOWHOUSECPU_NUM_ARG_REGS
+    (*ca) < SNOWHOUSECPU_NUM_ARG_REGS
+  )
   {
     // Check for trying to store larger-than-word-size arguments in
     // `cat(r5, r6)`
     if (GET_MODE_SIZE (mode) > UNITS_PER_WORD
-      && (*cum) == SNOWHOUSECPU_LAST_ARG_REGNUM)
+      //&& (*ca) == SNOWHOUSECPU_LAST_ARG_REGNUM - 1)
+      && (*ca) == SNOWHOUSECPU_NUM_ARG_REGS - 1)
     {
       return NULL_RTX;
     }
 
-    const auto temp = (*cum);
-    //fprintf (stderr, "\nsnowhousecpu_function_arg REG:  %d\n", temp);
+    const auto temp = (*ca) + SNOWHOUSECPU_FIRST_ARG_REGNUM;
+    //fprintf (
+    //  stderr, "\nsnowhousecpu_function_arg REG:  %u %s\n",
+    //  *ca,
+    //  reg_names[temp]
+    //);
     return gen_rtx_REG (mode, temp);
   }
   else
@@ -1222,18 +1240,21 @@ snowhousecpu_function_arg (cumulative_args_t cum_v,
 // This hook need not do anything if the argument in question was passed on
 // the stack.
 static void
-snowhousecpu_function_arg_advance (cumulative_args_t cum_v,
+snowhousecpu_function_arg_advance (cumulative_args_t ca_v,
   //machine_mode mode,
   //const_tree type, bool named ATTRIBUTE_UNUSED
   const function_arg_info& arg
   )
 {
-  CUMULATIVE_ARGS* cum = get_cumulative_args (cum_v);
+  CUMULATIVE_ARGS* ca = get_cumulative_args (ca_v);
 
-  *cum = (((*cum) <= SNOWHOUSECPU_LAST_ARG_REGNUM)
-    ? *cum + ((3 + SNOWHOUSECPU_FUNCTION_ARG_SIZE (arg.mode, arg.type))
+  *ca = (
+    //((*ca) <= SNOWHOUSECPU_LAST_ARG_REGNUM - 1
+    ((*ca) < SNOWHOUSECPU_NUM_ARG_REGS
+  )
+    ? *ca + ((3 + SNOWHOUSECPU_FUNCTION_ARG_SIZE (arg.mode, arg.type))
       / UNITS_PER_WORD)
-    : *cum);
+    : *ca);
 }
 
 
@@ -1294,6 +1315,15 @@ snowhousecpu_regno_actually_callee_saved (int regno)
 
   if (df_regs_ever_live_p (regno))
   {
+    //fprintf (
+    //  stderr,
+    //  "debugging: df_regs_ever_live_p (%i)\n",
+    //  regno
+    //);
+    if (regno == SNOWHOUSECPU_HI)
+    {
+      return false;
+    }
     if (regno == SNOWHOUSECPU_FAKE_FP || regno == SNOWHOUSECPU_FAKE_AP)
     {
       return false;
@@ -1301,6 +1331,14 @@ snowhousecpu_regno_actually_callee_saved (int regno)
 
     if (!call_used_or_fixed_reg_p (regno) || regno == SNOWHOUSECPU_LR)
     {
+      if (regno != SNOWHOUSECPU_LR)
+      {
+        //fprintf (
+        //  stderr,
+        //  "debugging: !call_used_or_fixed_reg_p (%i)\n",
+        //  regno
+        //);
+      }
       return true;
     }
   }
@@ -1527,10 +1565,10 @@ snowhousecpu_expand_prologue ()
   {
     insn = snowhousecpu_add_to_sp (
       (
-	-(
-	  cfun->machine->size_for_adjusting_sp
-	  + (idx * UNITS_PER_WORD)
-	)
+        -(
+          cfun->machine->size_for_adjusting_sp
+          + (idx * UNITS_PER_WORD)
+        )
       ),
       REG_FRAME_RELATED_EXPR);
   }
@@ -1561,6 +1599,12 @@ snowhousecpu_expand_prologue ()
     //if (df_regs_ever_live_p (regno) && !call_used_or_fixed_reg_p (regno))
     {
       //gen_push (regno);
+      //if (regno == SNOWHOUSECPU_HI) {
+      //  fprintf(
+      //    stderr,
+      //    "eek! 1\n"
+      //  );
+      //}
       snowhousecpu_partial_push (regno, idx, true);
       ++idx;
     }
@@ -1596,6 +1640,12 @@ snowhousecpu_expand_epilogue ()
     //if (df_regs_ever_live_p (regno) && !call_used_or_fixed_reg_p (regno))
     {
       //gen_pop (regno);
+      //fprintf (
+      //  stderr,
+      //  "restore callee-saved registers: regno:%i idx:%i\n",
+      //  regno,
+      //  idx
+      //);
       snowhousecpu_pop (regno, idx);
       ++idx;
     }
@@ -1609,6 +1659,12 @@ snowhousecpu_expand_epilogue ()
   {
     //gen_pop (SNOWHOUSECPU_FP);
     //gen_pop (HARD_FRAME_POINTER_REGNUM);
+    //fprintf (
+    //  stderr,
+    //  "frame_pointer_needed: regno:%i idx:%i\n",
+    //  HARD_FRAME_POINTER_REGNUM,
+    //  idx
+    //);
     snowhousecpu_pop (HARD_FRAME_POINTER_REGNUM, idx);
     ++idx;
   }
@@ -1641,62 +1697,91 @@ snowhousecpu_emit_mov (rtx dst, rtx src, machine_mode mode)
 
   if (!(reload_in_progress || reload_completed))
   {
-    if (
-      //can_create_pseudo_p () && 
-      MEM_P (operands[0])
-    //&& !snowhousecpu_mov_reg_operand (mode, operands[1])
-    )
+    //if (GET_MODE_SIZE (mode) <= UNITS_PER_WORD)
     {
-      snowhousecpu_debug_fprintf (stderr, "MEM_P (operands[0])\n");
+      if (
+        //can_create_pseudo_p () && 
+        MEM_P (operands[0])
+      //&& !snowhousecpu_mov_reg_operand (mode, operands[1])
+      )
       {
-        operands[1] = force_reg (mode, operands[1]);
-        snowhousecpu_debug_fprintf (stderr,
-          "operands[1] = force_reg (...):\n");
-        snowhousecpu_debug_rtx (operands[1]);
-      }
+        snowhousecpu_debug_fprintf (stderr, "MEM_P (operands[0])\n");
+        {
+          operands[1] = force_reg (mode, operands[1]);
+          snowhousecpu_debug_fprintf (stderr,
+            "operands[1] = force_reg (...):\n");
+          snowhousecpu_debug_rtx (operands[1]);
+        }
 
-      if (MEM_P (XEXP (operands[0], 0))
-        || snowhousecpu_absolute_ex (XEXP (operands[0], 0)))
-      {
-        rtx tmp;
-        snowhousecpu_debug_fprintf (stderr,
-          "operands[0] = gen_rtx_MEM (...):\n");
-        snowhousecpu_debug_rtx (XEXP (operands[0], 0));
-        tmp = force_reg (Pmode, XEXP (operands[0], 0));
-        snowhousecpu_debug_rtx (tmp);
-        operands[0] = gen_rtx_MEM (mode, tmp);
-        snowhousecpu_debug_rtx (operands[0]);
+        if (MEM_P (XEXP (operands[0], 0))
+          || snowhousecpu_absolute_ex (XEXP (operands[0], 0)))
+        {
+          rtx tmp;
+          snowhousecpu_debug_fprintf (stderr,
+            "operands[0] = gen_rtx_MEM (...):\n");
+          snowhousecpu_debug_rtx (XEXP (operands[0], 0));
+          tmp = force_reg (Pmode, XEXP (operands[0], 0));
+          snowhousecpu_debug_rtx (tmp);
+          operands[0] = gen_rtx_MEM (mode, tmp);
+          snowhousecpu_debug_rtx (operands[0]);
+        }
+        else
+        {
+          snowhousecpu_debug_fprintf (stderr,
+            "don't have inner `MEM_P`/`snowhousecpu_absolute_ex`\n");
+        }
       }
-      else
+      else if (
+        //can_create_pseudo_p () &&
+        MEM_P (operands[1])
+      )
       {
-        snowhousecpu_debug_fprintf (stderr,
-          "don't have inner `MEM_P`/`snowhousecpu_absolute_ex`\n");
+        snowhousecpu_debug_fprintf (stderr, "MEM_P (operands[1])\n");
+        if (MEM_P (XEXP (operands[1], 0))
+          || snowhousecpu_absolute_ex (XEXP (operands[1], 0)))
+        {
+          rtx tmp;
+          snowhousecpu_debug_fprintf (stderr,
+            "operands[1] = gen_rtx_MEM (...):\n");
+          snowhousecpu_debug_rtx (XEXP (operands[1], 0));
+          tmp = force_reg (Pmode, XEXP (operands[1], 0));
+          snowhousecpu_debug_rtx (tmp);
+          operands[1] = gen_rtx_MEM (mode, tmp);
+          snowhousecpu_debug_rtx (operands[1]);
+        }
+        else
+        {
+          snowhousecpu_debug_fprintf (stderr,
+            "don't have inner `MEM_P`/`snowhousecpu_absolute_ex`\n");
+        }
       }
     }
-    else if (
-      //can_create_pseudo_p () &&
-      MEM_P (operands[1])
-    )
-    {
-      snowhousecpu_debug_fprintf (stderr, "MEM_P (operands[1])\n");
-      if (MEM_P (XEXP (operands[1], 0))
-        || snowhousecpu_absolute_ex (XEXP (operands[1], 0)))
-      {
-        rtx tmp;
-        snowhousecpu_debug_fprintf (stderr,
-          "operands[1] = gen_rtx_MEM (...):\n");
-        snowhousecpu_debug_rtx (XEXP (operands[1], 0));
-        tmp = force_reg (Pmode, XEXP (operands[1], 0));
-        snowhousecpu_debug_rtx (tmp);
-        operands[1] = gen_rtx_MEM (mode, tmp);
-        snowhousecpu_debug_rtx (operands[1]);
-      }
-      else
-      {
-        snowhousecpu_debug_fprintf (stderr,
-          "don't have inner `MEM_P`/`snowhousecpu_absolute_ex`\n");
-      }
-    }
+    //else if (GET_MODE_SIZE (mode) == UNITS_PER_WORD)
+    //{
+    //  rtx tmp_dst[2];
+    //  rtx tmp_src[2];
+    //  if (MEM_P (operands[0]))
+    //  {
+    //    //operands[1] = force_reg (mode, operands[1]);
+    //  }
+    //  else if (MEM_P (operands[1]))
+    //  {
+    //  }
+    //  else
+    //  {
+    //    emit_insn (gen_rtx_SET
+    //      (gen_lowpart (SImode, operands[0]),
+    //      gen_lowpart (SImode, operands[1])));
+    //    emit_insn (gen_rtx_SET
+    //      (gen_highpart (SImode, operands[0]),
+    //      gen_highpart (SImode, operands[1])));
+    //  }
+    //}
+    //else
+    //{
+    //  // TODO: figure out how to handle this (if necessary)
+    //  gcc_unreachable ();
+    //}
     //if (GET_CODE (operands[1]) == SUBREG)
     //{
     //  rtx tmp = simplify_gen_subreg (SImode);
@@ -1717,7 +1802,15 @@ snowhousecpu_emit_mov (rtx dst, rtx src, machine_mode mode)
   }
   //if (GET_MODE_SIZE (mode) <= UNITS_PER_WORD)
   {
-    emit_insn (gen_rtx_SET (operands[0], operands[1]));
+    //if (can_create_pseudo_p ())
+    //{
+      emit_insn (gen_rtx_SET (operands[0], operands[1]));
+    //  emit_move_insn (operands[0], operands[1]);
+    //}
+    //else
+    //{
+    //  emit_move_insn_1 (operands[0], operands[1]);
+    //}
     //emit_move_insn (operands[0], operands[1]);
   }
   //else if (GET_MODE_SIZE (mode) == UNITS_PER_WORD * 2)
@@ -1791,12 +1884,12 @@ snowhousecpu_asm_named_section (const char *name, unsigned int flags, tree decl)
 //}
 static void
 snowhousecpu_setup_incoming_varargs
-  (cumulative_args_t cum_v,
+  (cumulative_args_t ca_v,
   const function_arg_info& arg ATTRIBUTE_UNUSED,
   int *pretend_args_size, int no_rtl)
 {
-  CUMULATIVE_ARGS* cum = get_cumulative_args (cum_v);
-  int nregs = SNOWHOUSECPU_NUM_ARG_REGS - (*cum);
+  CUMULATIVE_ARGS* ca = get_cumulative_args (ca_v);
+  int nregs = SNOWHOUSECPU_NUM_ARG_REGS - (*ca);
   
   *pretend_args_size = (nregs < 0) ? 0 : (GET_MODE_SIZE (SImode) * nregs);
   
@@ -1805,16 +1898,17 @@ snowhousecpu_setup_incoming_varargs
     return;
   }
   
-  for (int regno=*cum; regno<SNOWHOUSECPU_NUM_ARG_REGS; ++regno)
+  for (int other_regno=*ca; other_regno<SNOWHOUSECPU_NUM_ARG_REGS; ++other_regno)
   {
+    int regno = other_regno + SNOWHOUSECPU_FIRST_ARG_REGNUM;
     rtx reg = gen_rtx_REG (SImode, regno);
     rtx slot = gen_rtx_PLUS
       (Pmode,
       gen_rtx_REG (SImode, ARG_POINTER_REGNUM),
       GEN_INT (UNITS_PER_WORD * (regno - 1)));
-        //rtx slot = gen_rtx_PLUS (Pmode,
-        //                      gen_rtx_REG (SImode, ARG_POINTER_REGNUM),
-        //                      GEN_INT (UNITS_PER_WORD * regno /*(3 + (regno-2))*/));
+      //rtx slot = gen_rtx_PLUS (Pmode,
+      //                      gen_rtx_REG (SImode, ARG_POINTER_REGNUM),
+      //                      GEN_INT (UNITS_PER_WORD * regno /*(3 + (regno-2))*/));
     
     emit_move_insn (gen_rtx_MEM (SImode, slot), reg);
   }
@@ -1930,8 +2024,46 @@ snowhousecpu_setup_incoming_varargs
 //#undef L_udivvdi3
 //
 //#undef L_ffsdi2
+//--------
+//unsigned char
+//snowhousecpu_target_class_max_nregs (reg_class_t rclass, machine_mode mode)
+//{
+//  if (
+//    mode == DImode
+//    && rclass == DIVW_OUTP_REGS
+//  )
+//  {
+//    return 1ull;
+//  }
+//  else if (GET_MODE_SIZE (mode) <= GET_MODE_SIZE (SImode))
+//  {
+//    return GET_MODE_SIZE (SImode);
+//  }
+//  else
+//  {
+//    return (GET_MODE_SIZE (mode) * UNITS_PER_WORD);
+//  }
+//}
+
+//reg_class_t
+//snowhousecpu_spill_class (reg_class_t rclass, machine_mode mode)
+//{
+//  if (rclass == DIVW_OUTP_REGS)
+//  {
+//    return GENERAL_REGS;
+//  }
+//  else
+//  {
+//    return NO_REGS;
+//  }
+//}
 // --------
 // Initialize the GCC target structure.
+//#undef TARGET_CLASS_MAX_NREGS
+//#define TARGET_CLASS_MAX_NREGS snowhousecpu_target_class_max_nregs
+
+//#undef TARGET_SPILL_CLASS
+//#define TARGET_SPILL_CLASS snowhousecpu_spill_class
 
 #undef TARGET_PROMOTE_PROTOTYPES
 #define TARGET_PROMOTE_PROTOTYPES hook_bool_const_tree_true

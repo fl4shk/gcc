@@ -164,13 +164,14 @@
 // Registers
 #define REGISTER_NAMES \
   { \
+    "hi", \
     /*"r0", */ \
     "r1", "r2", "r3", \
     "r4", "r5", "r6", "r7", \
     "r8", "r9", "r10", "r11", \
     "r12", "lr", "fp", "sp", \
     "fake_fp", "fake_ap", \
-    "hi", \
+    /* "hi", */ \
     /*"flags",*/ \
     /* "hi", "lo", */ \
     /*"ids", "ira", "ie", "ity", "sty",*/ \
@@ -178,24 +179,25 @@
   }
 
 //#define SNOWHOUSECPU_R0 0
-#define SNOWHOUSECPU_R1 0
-#define SNOWHOUSECPU_R2 1
-#define SNOWHOUSECPU_R3 2
-#define SNOWHOUSECPU_R4 3
-#define SNOWHOUSECPU_R5 4
-#define SNOWHOUSECPU_R6 5
-#define SNOWHOUSECPU_R7 6
-#define SNOWHOUSECPU_R8 7
-#define SNOWHOUSECPU_R9 8
-#define SNOWHOUSECPU_R10 9
-#define SNOWHOUSECPU_R11 10
-#define SNOWHOUSECPU_R12 11
-#define SNOWHOUSECPU_LR 12
-#define SNOWHOUSECPU_FP 13
-#define SNOWHOUSECPU_SP 14
-#define SNOWHOUSECPU_FAKE_FP 15
-#define SNOWHOUSECPU_FAKE_AP 16
-#define SNOWHOUSECPU_HI 17
+#define SNOWHOUSECPU_HI 0
+#define SNOWHOUSECPU_R1 1
+#define SNOWHOUSECPU_R2 2
+#define SNOWHOUSECPU_R3 3
+#define SNOWHOUSECPU_R4 4
+#define SNOWHOUSECPU_R5 5
+#define SNOWHOUSECPU_R6 6
+#define SNOWHOUSECPU_R7 7
+#define SNOWHOUSECPU_R8 8
+#define SNOWHOUSECPU_R9 9
+#define SNOWHOUSECPU_R10 10
+#define SNOWHOUSECPU_R11 11
+#define SNOWHOUSECPU_R12 12
+#define SNOWHOUSECPU_LR 13
+#define SNOWHOUSECPU_FP 14
+#define SNOWHOUSECPU_SP 15
+#define SNOWHOUSECPU_FAKE_FP 16
+#define SNOWHOUSECPU_FAKE_AP 17
+//#define SNOWHOUSECPU_HI 17
 //#define SNOWHOUSECPU_FAKE_FLAGS 17
 /*
 #define SNOWHOUSECPU_HI 19
@@ -227,7 +229,8 @@
 #define SNOWHOUSECPU_NUM_GENERAL_REGS \
   (SNOWHOUSECPU_LAST_GENERAL_REGNUM - SNOWHOUSECPU_FIRST_GENERAL_REGNUM + 1)
 #define STATIC_CHAIN_REGNUM \
-  (SNOWHOUSECPU_LAST_ARG_REGNUM + 1)
+  (SNOWHOUSECPU_R12)
+  //(SNOWHOUSECPU_LAST_ARG_REGNUM + 1)
 
 /*
 #define SNOWHOUSECPU_FIRST_INTERRUPT_REG
@@ -248,13 +251,13 @@
 // Registers with fixed purposes marked with a "1". Registers here
 #define FIXED_REGISTERS \
   { \
+    0,            /* hi */ \
     /*0,*/ /* r0, */ \
-    0, 0, 0,   /* r1, r2, r3 */ \
+    0, 0, 0,      /* r1, r2, r3 */ \
     0, 0, 0, 0,   /* r4, r5, r6, r7 */ \
     0, 0, 0, 0,   /* r8, r9, r10, r11 */ \
     0, 0, 1, 1,   /* r12, lr, fp, sp */ \
     1, 1,         /* fake_fp, fake_ap */ \
-    0,            /* hi */ \
     /*1,*/            /* fake_flags */ \
     1,            /* pc */ \
   }
@@ -268,28 +271,30 @@
 //// "flags" clobbered upon function call
 #define CALL_REALLY_USED_REGISTERS \
   { \
+    1,            /* hi */ \
     /*1, */ /* r0 */ \
     1, 1, 1,      /* r1, r2, r3 */ \
     1, 1, 1, 0,   /* r4, r5, r6, r7 */ \
     0, 0, 0, 0,   /* r8, r9, r10, r11 */ \
     0, 1, 1, 1,   /* r12, lr, fp, sp */ \
     1, 1,         /* fake_fp, fake_ap */ \
-    1,            /* hi */ \
     /*1,*/            /* fake_flags */ \
     1,            /* pc */ \
   }
 
-//#define REG_ALLOC_ORDER
-// {
-//   0, 1, 2,       /* r1, r2, r3 */
-//   3, 4, 5, 6,            /* r4, r5, r6, r7 */
-//   7, 8, 9, 10,           /* r8, r9, r10, r11 */
-//   11, 12, 13, 14,  /* r12, lr, fp, sp */
-//   15, 16,        /* fake_fp, fake_ap */
-//   17,                    /* pc */
-// }
+#define REG_ALLOC_ORDER \
+ { \
+   1, 2, 3,       /* r1, r2, r3 */ \
+   4, 5, 6,       /* r4, r5, r6 */ \
+   7,             /* r7 */ \
+   8, 9, 10, 11,           /* r8, r9, r10, r11 */ \
+   12, 13, 14, 15,  /* r12, lr, fp, sp */ \
+   16, 17,        /* fake_fp, fake_ap */ \
+   0,             /* hi */ \
+   18,            /* pc */ \
+ }
 
-//#define HONOR_REG_ALLOC_ORDER 1
+#define HONOR_REG_ALLOC_ORDER 1
 
 enum reg_class
 {
@@ -299,7 +304,8 @@ enum reg_class
   //FULL_PRODUCT_HIGH_PART_REGS,
   //FULL_PRODUCT_LOW_PART_REGS,
   HI_REGS,
-  GENERAL_OR_HI_REGS,
+  //GENERAL_OR_HI_REGS,
+  DIVW_OUTP_REGS, // this is a hack!
   FP_REGS,
   SP_REGS,
   //CC_REGS,
@@ -319,7 +325,8 @@ enum reg_class
     /* "FULL_PRODUCT_HIGH_PART_REGS", */ \
     /* "FULL_PRODUCT_LOW_PART_REGS", */ \
     "HI_REGS", \
-    "GENERAL_OR_HI_REGS", \
+    /* "GENERAL_OR_HI_REGS", */ \
+    "DIVW_OUTP_REGS", \
     "FP_REGS", \
     "SP_REGS", \
     /*"CC_REGS",*/ \
@@ -350,9 +357,15 @@ enum reg_class
     /* {1 << SNOWHOUSECPU_R0}, */ /* FULL_PRODUCT_HIGH_PART_REGS */ \
     /* {1 << SNOWHOUSECPU_R1}, */ /* FULL_PRODUCT_LOW_PART_REGS */ \
     {1 << SNOWHOUSECPU_HI}, /* HI_REGS */ \
-    { /* GENERAL_OR_HI_REGS */ \
-      (((1 << SNOWHOUSECPU_NUM_GENERAL_REGS) - 1) << SNOWHOUSECPU_FIRST_GENERAL_REGNUM) \
-      | (1 << SNOWHOUSECPU_HI) \
+    /*{ */ /* GENERAL_OR_HI_REGS */ \
+    /*  (((1 << SNOWHOUSECPU_NUM_GENERAL_REGS) - 1) << SNOWHOUSECPU_FIRST_GENERAL_REGNUM) */\
+    /*  | (1 << SNOWHOUSECPU_HI) */ \
+    /* } , */ \
+    { /* DIVW_OUTP_REGS */ \
+      ( \
+        (1 << SNOWHOUSECPU_HI) \
+        | (1 << SNOWHOUSECPU_R7) \
+      ) \
     }, \
     {1 << SNOWHOUSECPU_FP}, /* FP_REGS */ \
     {1 << SNOWHOUSECPU_SP}, /* SP_REGS */ \
@@ -367,6 +380,9 @@ enum reg_class
 static const enum reg_class
 snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 {
+  // hi
+  HI_REGS,
+
   // r0, 
   //FULL_PRODUCT_HIGH_PART_REGS, 
   //r1, r2, r3
@@ -384,8 +400,8 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
   // fake_fp, fake_ap
   GENERAL_REGS, GENERAL_REGS,
 
-  // hi
-  HI_REGS,
+  //// hi
+  //HI_REGS,
 
   //// flags,
   //CC_REGS,
@@ -449,8 +465,7 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 // Define this macro if the compiler should avoid copies to/from CCmode
 // registers. You should only define this macro if support for copying
 // to/from CCmode is incomplete.
-//// (Change this later as it *is* possible to back up/restore the flags)
-#define AVOID_CCMODE_COPIES 1
+//#define AVOID_CCMODE_COPIES 1
 
 
 // The Overall Framework of an Assembler File
@@ -593,7 +608,7 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 // A C expression. If nonzero, push insns will be used to pass outgoing
 // arguments. If the target machine does not have a push instruction, set
 // it to zero.
-#define PUSH_ARGS 0
+//#define PUSH_ARGS 0
 //#define PUSH_ROUNDING (npushed)
 //  npushed
 
@@ -616,10 +631,10 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 
 // A C statement (sans semicolon) for initializing the variable CUM
 // for the state at the beginning of the argument list.
-// For snowhousecpu, the first arg is passed in register 0 (aka r0).
-#define INIT_CUMULATIVE_ARGS(CUM,FNTYPE,LIBNAME,FNDECL,N_NAMED_ARGS) \
+// For snowhousecpu, the first arg is passed in register 1 (aka r1).
+#define INIT_CUMULATIVE_ARGS(CA,FNTYPE,LIBNAME,FNDECL,N_NAMED_ARGS) \
   /* (CUM = SNOWHOUSECPU_R0) */ \
-  (CUM = SNOWHOUSECPU_FIRST_ARG_REGNUM)
+  (CA = 0u /*SNOWHOUSECPU_FIRST_ARG_REGNUM*/)
 
 
 // How Scalar Function Values Are Returned
@@ -763,7 +778,7 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 //// addresses on the stack.
 
 // Describe how we implement __builtin_eh_return.
-#define EH_RETURN_DATA_REGNO(N) ((N) < 4 ? N : INVALID_REGNUM)
+#define EH_RETURN_DATA_REGNO(N) (((N) > 1 && (N) < 5) ? N : INVALID_REGNUM)
 
 // Store the return handler into the call frame.
 #define EH_RETURN_HANDLER_RTX \
