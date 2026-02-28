@@ -109,7 +109,7 @@
           (mult:DI (zero_extend:DI (match_dup 2)) (zero_extend:DI (match_dup 3)))
           (const_int 32))))]
   ""
-  "umulw %0, %2, %3 // %L0 %H0 %L1 %H1 %L2 %H2"
+  "umulw %0, %2, %3 // %2 * %3 => {%1, %0} "
 )
 (define_insn "smulw"
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -122,7 +122,7 @@
           (mult:DI (sign_extend:DI (match_dup 2)) (sign_extend:DI (match_dup 3)))
           (const_int 32))))]
   ""
-  "smulw %0, %2, %3 // %L0 %H0 %L1 %H1 %L2 %H2"
+  "smulw %0, %2, %3 // // %2 * %3 => {%1, %0}"
 )
 ;;--------
 (define_insn "udivdi3"
@@ -132,7 +132,7 @@
       ;;(match_dup 0) ;; can't use this for duplicate registers!
       (match_operand:DI 2 "register_operand" "r")))]
   ""
-  "udivw %L0, %H2, %L2 // {%H1 %L1} / {%H2 %L2} => {%H0 %L0}"
+  "udivw %L0, %H2, %L2 // {%H1, %L1} / {%H2, %L2} => {%H0, %L0}"
   ;;"udivw %L0, %H1, %L1 // %L0 %H0 %L1 %H1"
 )
 ;;(define_insn "divdi3"
@@ -150,7 +150,7 @@
       ;;(match_dup 0) ;; can't use this for duplicate registers!
       (match_operand:DI 2 "register_operand" "r")))]
   ""
-  "sdivw %L0, %H2, %L2 // {%H1 %L1} / {%H2 %L2} => {%H0 %L0}"
+  "sdivw %L0, %H2, %L2 // {%H1, %L1} / {%H2, %L2} => {%H0, %L0}"
 )
 
 ;;(define_expand "udivdi3"

@@ -303,19 +303,19 @@
     1,            /* pc */ \
   }
 
-#define REG_ALLOC_ORDER \
- { \
-   0, 1, 2,       /* r1, r2, r3 */ \
-   3, 4, 5,       /* r4, r5, r6 */ \
-   6,             /* hi */ \
-   7,             /* r7 */ \
-   8, 9, 10, 11,           /* r8, r9, r10, r11 */ \
-   12, 13, 14, 15,  /* r12, lr, fp, sp */ \
-   16, 17,        /* fake_fp, fake_ap */ \
-   18,            /* pc */ \
- }
+//#define REG_ALLOC_ORDER
+// {
+//   0, 1, 2,       /* r1, r2, r3 */
+//   3, 4, 5,       /* r4, r5, r6 */
+//   6,             /* hi */
+//   7,             /* r7 */
+//   8, 9, 10, 11,           /* r8, r9, r10, r11 */
+//   12, 13, 14, 15,  /* r12, lr, fp, sp */
+//   16, 17,        /* fake_fp, fake_ap */
+//   18,            /* pc */
+// }
 
-#define HONOR_REG_ALLOC_ORDER 1
+//#define HONOR_REG_ALLOC_ORDER 1
 
 enum reg_class
 {
