@@ -1084,6 +1084,8 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 #define HAS_LONG_COND_BRANCH true
 #define HAS_LONG_UNCOND_BRANCH true
 
+#define TARGET_SUPPORTS_WIDE_INT 1
+
 #define TARGET_OBJECT_SUFFIX ".o"
 
 extern int reload_in_progress;
