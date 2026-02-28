@@ -59,17 +59,17 @@
 )
 
 
-;;(define_insn "mulsi3"
-;;  [(parallel [
-;;    (set (match_operand:SI 0 "register_operand" "=r")
-;;        (mult:SI
-;;        (match_operand:SI 1 "register_operand" "r")
-;;        (match_operand:SI 2 "register_operand" "r")))
-;;    (clobber (reg:SI REG_HI))
-;;  ])]
-;;  ""
-;;  "umulw %0, %1, %2"
-;;)
+(define_insn "mulsi3"
+  [(parallel [
+    (set (match_operand:SI 0 "register_operand" "=r")
+        (mult:SI
+        (match_operand:SI 1 "register_operand" "r")
+        (match_operand:SI 2 "register_operand" "r")))
+    (clobber (reg:SI REG_HI))
+  ])]
+  ""
+  "umulw %0, %1, %2 // mulsi3"
+)
 (define_expand "umulsidi3"
   [(set (match_operand:DI 0 "register_operand")
     (mult:DI
