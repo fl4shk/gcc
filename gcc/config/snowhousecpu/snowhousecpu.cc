@@ -1623,11 +1623,11 @@ snowhousecpu_expand_epilogue ()
 {
   emit_insn (gen_blockage ());
 
-  if (cfun->machine->size_for_adjusting_sp > 0)
-  {
-    snowhousecpu_add_to_sp (cfun->machine->size_for_adjusting_sp,
-      REG_FRAME_RELATED_EXPR);
-  }
+  //if (cfun->machine->size_for_adjusting_sp > 0)
+  //{
+  //  snowhousecpu_add_to_sp (cfun->machine->size_for_adjusting_sp,
+  //    REG_FRAME_RELATED_EXPR);
+  //}
 
   //fprintf (stderr, "\nsnowhousecpu_expand_epilogue ()\n");
 
@@ -1668,7 +1668,14 @@ snowhousecpu_expand_epilogue ()
     snowhousecpu_pop (HARD_FRAME_POINTER_REGNUM, idx);
     ++idx;
   }
-  snowhousecpu_pop (0, idx, true);
+  //snowhousecpu_pop (0, idx, true);
+  //if (cfun->machine->size_for_adjusting_sp > 0)
+  {
+    snowhousecpu_add_to_sp (
+      (cfun->machine->size_for_adjusting_sp + idx * UNITS_PER_WORD),
+      REG_FRAME_RELATED_EXPR
+    );
+  }
 
   emit_jump_insn (gen_returner ());
   //emit_jump_insn (gen_return ());
