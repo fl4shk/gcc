@@ -2064,6 +2064,23 @@ snowhousecpu_setup_incoming_varargs
 //    return NO_REGS;
 //  }
 //}
+const char *snowhousecpu_asm_byte_op = "\t.byte\t";
+
+const char *snowhousecpu_asm_aligned_hi_op = "\t.i16\t";
+const char *snowhousecpu_asm_aligned_psi_op = NULL;
+const char *snowhousecpu_asm_aligned_si_op = "\t.i32\t";
+const char *snowhousecpu_asm_aligned_pdi_op = NULL;
+const char *snowhousecpu_asm_aligned_di_op = "\t.i64\t";
+const char *snowhousecpu_asm_aligned_pti_op = NULL;
+const char *snowhousecpu_asm_aligned_ti_op = NULL;
+
+const char *snowhousecpu_asm_unaligned_hi_op = NULL;
+const char *snowhousecpu_asm_unaligned_psi_op = NULL;
+const char *snowhousecpu_asm_unaligned_si_op = NULL;
+const char *snowhousecpu_asm_unaligned_pdi_op = NULL;
+const char *snowhousecpu_asm_unaligned_di_op = NULL;
+const char *snowhousecpu_asm_unaligned_pti_op = NULL;
+const char *snowhousecpu_asm_unaligned_ti_op = NULL;
 // --------
 // Initialize the GCC target structure.
 //#undef TARGET_CLASS_MAX_NREGS
@@ -2071,6 +2088,39 @@ snowhousecpu_setup_incoming_varargs
 
 //#undef TARGET_SPILL_CLASS
 //#define TARGET_SPILL_CLASS snowhousecpu_spill_class
+
+#undef TARGET_ASM_BYTE_OP
+#define TARGET_ASM_BYTE_OP snowhousecpu_asm_byte_op
+
+#undef TARGET_ASM_ALIGNED_HI_OP
+#define TARGET_ASM_ALIGNED_HI_OP snowhousecpu_asm_aligned_hi_op
+#undef TARGET_ASM_ALIGNED_PSI_OP
+#define TARGET_ASM_ALIGNED_PSI_OP snowhousecpu_asm_aligned_psi_op
+#undef TARGET_ASM_ALIGNED_SI_OP
+#define TARGET_ASM_ALIGNED_SI_OP snowhousecpu_asm_aligned_si_op
+#undef TARGET_ASM_ALIGNED_PDI_OP
+#define TARGET_ASM_ALIGNED_PDI_OP snowhousecpu_asm_aligned_pdi_op
+#undef TARGET_ASM_ALIGNED_DI_OP
+#define TARGET_ASM_ALIGNED_DI_OP snowhousecpu_asm_aligned_di_op
+#undef TARGET_ASM_ALIGNED_PTI_OP
+#define TARGET_ASM_ALIGNED_PTI_OP snowhousecpu_asm_aligned_pti_op
+#undef TARGET_ASM_ALIGNED_TI_OP
+#define TARGET_ASM_ALIGNED_TI_OP snowhousecpu_asm_aligned_ti_op
+
+#undef TARGET_ASM_UNALIGNED_HI_OP
+#define TARGET_ASM_UNALIGNED_HI_OP snowhousecpu_asm_unaligned_hi_op
+#undef TARGET_ASM_UNALIGNED_PSI_OP
+#define TARGET_ASM_UNALIGNED_PSI_OP snowhousecpu_asm_unaligned_psi_op
+#undef TARGET_ASM_UNALIGNED_SI_OP
+#define TARGET_ASM_UNALIGNED_SI_OP snowhousecpu_asm_unaligned_si_op
+#undef TARGET_ASM_UNALIGNED_PDI_OP
+#define TARGET_ASM_UNALIGNED_PDI_OP snowhousecpu_asm_unaligned_pdi_op
+#undef TARGET_ASM_UNALIGNED_DI_OP
+#define TARGET_ASM_UNALIGNED_DI_OP snowhousecpu_asm_unaligned_di_op
+#undef TARGET_ASM_UNALIGNED_PTI_OP
+#define TARGET_ASM_UNALIGNED_PTI_OP snowhousecpu_asm_unaligned_pti_op
+#undef TARGET_ASM_UNALIGNED_TI_OP
+#define TARGET_ASM_UNALIGNED_TI_OP snowhousecpu_asm_unaligned_ti_op
 
 #undef TARGET_PROMOTE_PROTOTYPES
 #define TARGET_PROMOTE_PROTOTYPES hook_bool_const_tree_true
