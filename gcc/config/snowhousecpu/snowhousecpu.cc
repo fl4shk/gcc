@@ -125,11 +125,11 @@ update_stack_args_size (struct machine_function* self)
 {
   // Padding needed for each element of the frame.
   self->stack_args_size = crtl->args.pretend_args_size;
-  //fprintf (
-  //  stderr,
-  //  "snowhousecpu debug: update_stack_args_size(): %u\n",
-  //  self->stack_args_size
-  //);
+  fprintf (
+    stderr,
+    "snowhousecpu debug: update_stack_args_size(): %u\n",
+    self->stack_args_size
+  );
 }
 
 static void
@@ -138,11 +138,11 @@ update_local_vars_size (struct machine_function* self)
   // Padding needed for each element of the frame.
   self->local_vars_size = SNOWHOUSECPU_STACK_ALIGN
     (HOST_WIDE_INT (get_frame_size ()));
-  //fprintf (
-  //  stderr,
-  //  "snowhousecpu debug: update_local_vars_size(): %u\n",
-  //  self->local_vars_size
-  //);
+  fprintf (
+    stderr,
+    "snowhousecpu debug: update_local_vars_size(): %u\n",
+    self->local_vars_size
+  );
 }
 
 static void
@@ -158,20 +158,20 @@ update_callee_saved_reg_size (struct machine_function* self)
     //if (df_regs_ever_live_p (regno) && !call_used_or_fixed_reg_p (regno))
     {
       self->callee_saved_reg_size += UNITS_PER_WORD;
-      //fprintf (
-      //  stderr,
-      //  "snowhousecpu debug: update_callee_saved_reg_size(): INNER: %u\n",
-      //  regno
-      //);
+      fprintf (
+        stderr,
+        "snowhousecpu debug: update_callee_saved_reg_size(): INNER: %u\n",
+        regno
+      );
     }
   }
   //snowhousecpu_debug_fprintf (stderr, "update_callee_saved_reg_size (): %i\n",
   //  self->callee_saved_reg_size);
-  //fprintf (
-  //  stderr,
-  //  "snowhousecpu debug: update_callee_saved_reg_size(): END: %u\n",
-  //  self->callee_saved_reg_size
-  //);
+  fprintf (
+    stderr,
+    "snowhousecpu debug: update_callee_saved_reg_size(): END: %u\n",
+    self->callee_saved_reg_size
+  );
 }
 
 static void
@@ -183,11 +183,11 @@ update_outgoing_args_size (struct machine_function* self)
       : 0;
   //snowhousecpu_debug_fprintf (stderr, "update_outgoing_args_size (): %i\n",
   //  self->outgoing_args_size);
-  //fprintf (
-  //  stderr,
-  //  "snowhousecpu debug: update_outgoing_args_size(): %u\n",
-  //  self->outgoing_args_size
-  //);
+  fprintf (
+    stderr,
+    "snowhousecpu debug: update_outgoing_args_size(): %u\n",
+    self->outgoing_args_size
+  );
 }
 
 static void
@@ -217,11 +217,11 @@ update_size_for_adjusting_sp (struct machine_function* self)
     + self->outgoing_args_size;
   //snowhousecpu_debug_fprintf (stderr, "update_size_for_adjusting_sp (): %i\n",
   //  self->size_for_adjusting_sp);
-  //fprintf (
-  //  stderr,
-  //  "snowhousecpu debug: update_size_for_adjusting_sp(): %u\n",
-  //  self->size_for_adjusting_sp
-  //);
+  fprintf (
+    stderr,
+    "snowhousecpu debug: update_size_for_adjusting_sp(): %u\n",
+    self->size_for_adjusting_sp
+  );
 }
 static void
 update_static_stack_size (struct machine_function* self)
@@ -235,21 +235,21 @@ update_static_stack_size (struct machine_function* self)
     + self->outgoing_args_size;
   //snowhousecpu_debug_fprintf (stderr, "update_static_stack_size (): %i\n",
   //  self->static_stack_size);
-  //fprintf (
-  //  stderr,
-  //  "snowhousecpu debug: update_static_stack_size(): %u\n",
-  //  self->static_stack_size
-  //);
+  fprintf (
+    stderr,
+    "snowhousecpu debug: update_static_stack_size(): %u\n",
+    self->static_stack_size
+  );
 }
 
 static void
 snowhousecpu_compute_frame ()
 {
-  //fprintf (
-  //  stderr,
-  //  "snowhousecpu debug: current_function_name(): %s\n",
-  //  current_function_name ()
-  //);
+  fprintf (
+    stderr,
+    "snowhousecpu debug: current_function_name(): %s\n",
+    current_function_name ()
+  );
   update_stack_args_size (cfun->machine);
   update_local_vars_size (cfun->machine);
   update_callee_saved_reg_size (cfun->machine);
@@ -1401,7 +1401,11 @@ snowhousecpu_add_to_sp (int addendum, const enum reg_note kind)
 static void
 snowhousecpu_partial_push (int regno, int idx, bool frame_related_p)
 {
-  const int addend = cfun->machine->size_for_adjusting_sp;
+  const int addend = (
+    //cfun->machine->size_for_adjusting_sp
+    //0
+    cfun->machine->outgoing_args_size
+  );
   rtx plus, mem, reg;
   rtx_insn* str_insn;
   plus = gen_rtx_PLUS (SImode, stack_pointer_rtx, GEN_INT ((idx * UNITS_PER_WORD) + addend));
@@ -1416,7 +1420,11 @@ snowhousecpu_partial_push (int regno, int idx, bool frame_related_p)
 static void
 snowhousecpu_partial_pop (int regno, int idx/*, bool frame_related_p*/)
 {
-  const int addend = cfun->machine->size_for_adjusting_sp;
+  const int addend = (
+    //cfun->machine->size_for_adjusting_sp
+    //0
+    cfun->machine->outgoing_args_size
+  );
   rtx plus, mem, reg;
   rtx_insn* ldr_insn;
   plus = gen_rtx_PLUS (SImode, stack_pointer_rtx, GEN_INT ((idx * UNITS_PER_WORD) + addend));

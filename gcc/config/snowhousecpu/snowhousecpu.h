@@ -675,7 +675,7 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 // STACK AND CALLING
 
 // Stack frame setup:
-// High
+// High (greater address?)
 //                    ------------------------
 //                    last on-stack parameter
 //                    on-stack parameters (args grow upwards)...
@@ -697,12 +697,7 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 //                    (and sometimes dynamically allocated object on the 
 //                    stack)
 // sp
-// Low
-
-//// Because Flare32 is big-endian, 0xaabbccdd is laid out in memory like
-//// this:
-//// [addr+0x0:0xaa, addr+0x1:0xbb, addr+0x2:0xcc, addr+0x3:0xdd]
-//// 
+// Low (lower address?)
 
 //#define TARGET_HAVE_LIBATOMIC true
 
@@ -724,6 +719,12 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 #define STACK_POINTER_OFFSET 0
 //#define STACK_POINTER_OFFSET (UNITS_PER_WORD)
 //#define STACK_POINTER_OFFSET (snowhousecpu_stack_pointer_offset ())
+
+/* Define this if the above stack space is to be considered part of the
+   space allocated by the caller.  */
+//#define OUTGOING_REG_PARM_STACK_SPACE(FNTYPE) 1
+//#define STACK_PARMS_IN_REG_PARM_AREA
+
 
 // Offset from the stack pointer register to an item dynamically allocated
 // on the stack, e.g., by alloca.
