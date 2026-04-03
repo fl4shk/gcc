@@ -245,6 +245,11 @@ update_static_stack_size (struct machine_function* self)
 static void
 snowhousecpu_compute_frame ()
 {
+  //fprintf (
+  //  stderr,
+  //  "snowhousecpu debug: current_function_name(): %s\n",
+  //  current_function_name ()
+  //);
   update_stack_args_size (cfun->machine);
   update_local_vars_size (cfun->machine);
   update_callee_saved_reg_size (cfun->machine);
@@ -1394,6 +1399,37 @@ snowhousecpu_add_to_sp (int addendum, const enum reg_note kind)
 }
 
 static void
+snowhousecpu_partial_push (int regno, int idx, bool frame_related_p)
+{
+  const int addend = cfun->machine->size_for_adjusting_sp;
+  rtx plus, mem, reg;
+  rtx_insn* str_insn;
+  plus = gen_rtx_PLUS (SImode, stack_pointer_rtx, GEN_INT ((idx * UNITS_PER_WORD) + addend));
+  mem = gen_frame_mem (SImode, plus);
+  reg = gen_rtx_REG (SImode, regno);
+  str_insn = emit_insn (gen_rtx_SET (mem, reg));
+  if (frame_related_p)
+  {
+    RTX_FRAME_RELATED_P (str_insn) = 1;
+  }
+}
+static void
+snowhousecpu_partial_pop (int regno, int idx/*, bool frame_related_p*/)
+{
+  const int addend = cfun->machine->size_for_adjusting_sp;
+  rtx plus, mem, reg;
+  rtx_insn* ldr_insn;
+  plus = gen_rtx_PLUS (SImode, stack_pointer_rtx, GEN_INT ((idx * UNITS_PER_WORD) + addend));
+  mem = gen_frame_mem (SImode, plus);
+  reg = gen_rtx_REG (SImode, regno);
+  ldr_insn = emit_insn (gen_rtx_SET (reg, mem));
+  //if (frame_related_p)
+  //{
+  //  RTX_FRAME_RELATED_P (ldr_insn) = 1;
+  //}
+}
+
+static void
 snowhousecpu_push (int regno, bool frame_related_p)
 {
   //rtx insn, movsi_push, rtx_reg;
@@ -1440,34 +1476,6 @@ snowhousecpu_push (int regno, bool frame_related_p)
   }
 
   //return insn;
-}
-static void
-snowhousecpu_partial_push (int regno, int idx, bool frame_related_p)
-{
-  rtx plus, mem, reg;
-  rtx_insn* str_insn;
-  plus = gen_rtx_PLUS (SImode, stack_pointer_rtx, GEN_INT (idx * UNITS_PER_WORD));
-  mem = gen_frame_mem (SImode, plus);
-  reg = gen_rtx_REG (SImode, regno);
-  str_insn = emit_insn (gen_rtx_SET (mem, reg));
-  if (frame_related_p)
-  {
-    RTX_FRAME_RELATED_P (str_insn) = 1;
-  }
-}
-static void
-snowhousecpu_partial_pop (int regno, int idx/*, bool frame_related_p*/)
-{
-  rtx plus, mem, reg;
-  rtx_insn* ldr_insn;
-  plus = gen_rtx_PLUS (SImode, stack_pointer_rtx, GEN_INT (idx * UNITS_PER_WORD));
-  mem = gen_frame_mem (SImode, plus);
-  reg = gen_rtx_REG (SImode, regno);
-  ldr_insn = emit_insn (gen_rtx_SET (reg, mem));
-  //if (frame_related_p)
-  //{
-  //  RTX_FRAME_RELATED_P (ldr_insn) = 1;
-  //}
 }
 
 static void//rtx
