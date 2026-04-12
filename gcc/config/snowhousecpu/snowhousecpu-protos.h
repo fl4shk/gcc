@@ -42,3 +42,5 @@ extern rtx snowhousecpu_get_return_address (int count);
 
 //extern int snowhousecpu_stack_pointer_offset ();
 //extern int snowhousecpu_incoming_frame_sp_offset ();
+extern bool snowhousecpu_push_argument (unsigned int npush);
+//extern long long snowhousecpu_stack_pointer_offset ();

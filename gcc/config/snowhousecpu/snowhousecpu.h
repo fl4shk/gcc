@@ -50,19 +50,19 @@
 //    %{static:-Bstatic} %{shared:-shared} %{symbolic:-Bsymbolic}"
 #undef LINK_SPEC
 #define LINK_SPEC \
-	"%{mel:-EL}" \
-	"%{static:-static} " \
-	"%{shared:%eshared is not supported} " \
-	"--relax"
+    "%{mel:-EL}" \
+    "%{static:-static} " \
+    "%{shared:%eshared is not supported} " \
+    "--relax"
 
-	//"%{relax:--relax}"
+    //"%{relax:--relax}"
 
 //#ifndef MULTILIB_DEFAULTS
 //#define MULTILIB_DEFAULTS { "meb" }
 //#endif
 //#undef DRIVER_SELF_SPECS
 //#define DRIVER_SELF_SPECS
-//	"link:-Wl,--relax"
+//  "link:-Wl,--relax"
 
 
 #define BITS_PER_WORD 32
@@ -167,8 +167,8 @@
     /*"r0", */ \
     "r1", "r2", "r3", \
     "r4", "r5", "r6", \
-    "hi", \
     "r7", \
+    "hi", \
     "r8", "r9", "r10", "r11", \
     "r12", "lr", "fp", "sp", \
     "fake_fp", "fake_ap", \
@@ -187,8 +187,8 @@
 #define SNOWHOUSECPU_R4 3
 #define SNOWHOUSECPU_R5 4
 #define SNOWHOUSECPU_R6 5
-#define SNOWHOUSECPU_HI 6
-#define SNOWHOUSECPU_R7 7
+#define SNOWHOUSECPU_R7 6
+#define SNOWHOUSECPU_HI 7
 #define SNOWHOUSECPU_R8 8
 #define SNOWHOUSECPU_R9 9
 #define SNOWHOUSECPU_R10 10
@@ -227,7 +227,7 @@
 #define SNOWHOUSECPU_FIRST_GENERAL_REGNUM_FIRST_HALF \
   (SNOWHOUSECPU_R1)
 #define SNOWHOUSECPU_LAST_GENERAL_REGNUM_FIRST_HALF \
-  (SNOWHOUSECPU_R6)
+  (SNOWHOUSECPU_R7)
 
 #define SNOWHOUSECPU_NUM_GENERAL_REGS_FIRST_HALF \
   ( \
@@ -237,7 +237,7 @@
   )
 
 #define SNOWHOUSECPU_FIRST_GENERAL_REGNUM_SECOND_HALF \
-  (SNOWHOUSECPU_R7)
+  (SNOWHOUSECPU_R8)
 #define SNOWHOUSECPU_LAST_GENERAL_REGNUM_SECOND_HALF \
   (SNOWHOUSECPU_FAKE_AP)
 
@@ -273,8 +273,8 @@
     /*0,*/ /* r0, */ \
     0, 0, 0,      /* r1, r2, r3 */ \
     0, 0, 0,      /* r4, r5, r6 */ \
-    0,            /* hi */ \
     0,            /* r7 */ \
+    0,            /* hi */ \
     0, 0, 0, 0,   /* r8, r9, r10, r11 */ \
     0, 0, 1, 1,   /* r12, lr, fp, sp */ \
     1, 1,         /* fake_fp, fake_ap */ \
@@ -294,8 +294,8 @@
     /*1, */ /* r0 */ \
     1, 1, 1,      /* r1, r2, r3 */ \
     1, 1, 1,      /* r4, r5, r6 */ \
-    1,            /* hi */ \
     0,            /* r7 */ \
+    1,            /* hi */ \
     0, 0, 0, 0,   /* r8, r9, r10, r11 */ \
     0, 1, 1, 1,   /* r12, lr, fp, sp */ \
     1, 1,         /* fake_fp, fake_ap */ \
@@ -307,8 +307,8 @@
 // {
 //   0, 1, 2,       /* r1, r2, r3 */
 //   3, 4, 5,       /* r4, r5, r6 */
-//   6,             /* hi */
-//   7,             /* r7 */
+//   6,             /* r7 */
+//   7,             /* hi */
 //   8, 9, 10, 11,           /* r8, r9, r10, r11 */
 //   12, 13, 14, 15,  /* r12, lr, fp, sp */
 //   16, 17,        /* fake_fp, fake_ap */
@@ -392,8 +392,8 @@ enum reg_class
     /* } , */ \
     { /* DIVW_OUTP_REGS */ \
       ( \
-        (1 << SNOWHOUSECPU_HI) \
-        | (1 << SNOWHOUSECPU_R7) \
+        (1 << SNOWHOUSECPU_R7) \
+        | (1 << SNOWHOUSECPU_HI) \
       ) \
     }, \
     {1 << SNOWHOUSECPU_FP}, /* FP_REGS */ \
@@ -418,11 +418,11 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
   // r4, r5, r6, 
   GENERAL_REGS, GENERAL_REGS, GENERAL_REGS,
 
-  // hi
-  HI_REGS,
-
   //r7
   GENERAL_REGS,
+
+  // hi
+  HI_REGS,
 
   // r8, r9, r10, r11
   GENERAL_REGS, GENERAL_REGS, GENERAL_REGS, GENERAL_REGS,
@@ -658,9 +658,10 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 // ACCUMULATE_OUTGOING_ARGS is not proper.
 #define ACCUMULATE_OUTGOING_ARGS 1
 
-//// Define this if it is the responsibility of the caller to allocate
-//// the area reserved for arguments passed in registers.
+// Define this if it is the responsibility of the caller to allocate
+// the area reserved for arguments passed in registers.
 //#define REG_PARM_STACK_SPACE(FNDECL) (6 * UNITS_PER_WORD)
+#define REG_PARM_STACK_SPACE(FNDECL) 0
 
 // A C statement (sans semicolon) for initializing the variable CUM
 // for the state at the beginning of the argument list.
@@ -691,11 +692,13 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 //                    ------------------------
 //                    padding for alignment
 //                    ------------------------
+//                    SOMETIMES: dynamically allocated space on the 
+//                    stack
+//                    ------------------------
 //                    last outgoing arg
 //                    outgoing args (args grow upward)...
 //                    outgoing arg 0x0
-//                    (and sometimes dynamically allocated object on the 
-//                    stack)
+//                    ------------------------
 // sp
 // Low (lower address?)
 
@@ -716,14 +719,19 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 // If `ARGS_GROW_DOWNWARD, this is the offset to the location above the
 // first location at which outgoing arguments are placed.
 // We have `!ARGS_GROW_DOWNWARD`
+
+//extern long long snowhousecpu_stack_pointer_offset ();
 #define STACK_POINTER_OFFSET 0
+//#define STACK_POINTER_OFFSET snowhousecpu_stack_pointer_offset ()
 //#define STACK_POINTER_OFFSET (UNITS_PER_WORD)
 //#define STACK_POINTER_OFFSET (snowhousecpu_stack_pointer_offset ())
 
 /* Define this if the above stack space is to be considered part of the
    space allocated by the caller.  */
+#define OUTGOING_REG_PARM_STACK_SPACE(FNTYPE) 1
+#define STACK_PARMS_IN_REG_PARM_AREA
+
 //#define OUTGOING_REG_PARM_STACK_SPACE(FNTYPE) 1
-//#define STACK_PARMS_IN_REG_PARM_AREA
 
 
 // Offset from the stack pointer register to an item dynamically allocated
@@ -735,7 +743,7 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
   
 
 // Offset from the argument pointer register to the first argument’s
-// address.  If ARGS_GROW_DOWNWARD, this is the offset to the location
+// address.  If `ARGS_GROW_DOWNWARD`, this is the offset to the location
 // above the first argument’s address.
 //// We have `ARGS_GROW_DOWNWARD`, so we're at the address *above* 
 //// the first argument's address, per the "Stack frame setup" comments

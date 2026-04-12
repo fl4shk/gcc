@@ -133,6 +133,7 @@
       (match_operand:DI 2 "register_operand" "r")))]
   ""
   "udivw %L0, %H2, %L2 // {%H1, %L1} / {%H2, %L2} => {%H0, %L0}"
+  ;;"udivw %L0, %L2, %H2 // {%H1, %L1} / {%H2, %L2} => {%H0, %L0}"
   ;;"udivw %L0, %H1, %L1 // %L0 %H0 %L1 %H1"
 )
 ;;(define_insn "divdi3"
@@ -151,6 +152,7 @@
       (match_operand:DI 2 "register_operand" "r")))]
   ""
   "sdivw %L0, %H2, %L2 // {%H1, %L1} / {%H2, %L2} => {%H0, %L0}"
+  ;;"sdivw %L0, %L2, %H2 // {%H1, %L1} / {%H2, %L2} => {%H0, %L0}"
 )
 
 ;;(define_expand "udivdi3"
