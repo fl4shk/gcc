@@ -236,9 +236,8 @@ static void
 update_static_stack_size (struct machine_function* self)
 {
   self->static_stack_size
-    = //self->stack_args_size
-    //+
-    (frame_pointer_needed ? UNITS_PER_WORD : 0)
+    = (frame_pointer_needed ? UNITS_PER_WORD : 0)
+    + self->stack_args_size
     + self->callee_saved_reg_size
     + self->local_vars_size
     + self->outgoing_args_size;
