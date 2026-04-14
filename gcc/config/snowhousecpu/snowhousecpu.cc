@@ -1094,6 +1094,7 @@ snowhousecpu_initial_elimination_offset (int from, int to)
       + (frame_pointer_needed ? UNITS_PER_WORD : 0)
       + cfun->machine->callee_saved_reg_size
       + cfun->machine->local_vars_size
+      - cfun->machine->varargs_extra_stack_size
       + cfun->machine->outgoing_args_size;
   }
   else if (from == ARG_POINTER_REGNUM
@@ -1121,6 +1122,7 @@ snowhousecpu_initial_elimination_offset (int from, int to)
         + (frame_pointer_needed ? UNITS_PER_WORD : 0x0)
       + cfun->machine->callee_saved_reg_size
       + cfun->machine->local_vars_size
+      - cfun->machine->varargs_extra_stack_size
       + cfun->machine->outgoing_args_size;
     //ret
     //  = -UNITS_PER_WORD
