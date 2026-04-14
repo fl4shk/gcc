@@ -174,8 +174,9 @@ update_callee_saved_reg_size (struct machine_function* self)
       self->callee_saved_reg_size += UNITS_PER_WORD;
       snowhousecpu_stack_debug_fprintf (
         stderr,
-        "snowhousecpu debug: update_callee_saved_reg_size(): INNER: %u\n",
-        regno
+        "snowhousecpu debug: update_callee_saved_reg_size(): INNER: reg_names[%u]=%s\n",
+        regno,
+        reg_names[regno]
       );
     }
   }
@@ -1231,10 +1232,11 @@ snowhousecpu_function_arg (cumulative_args_t ca_v,
   )
 {
   machine_mode mode = arg.mode;
-  //if (!named)
-  //{
-  //  return NULL_RTX;
-  //}
+
+  if (!arg.named)
+  {
+    return NULL_RTX;
+  }
 
   CUMULATIVE_ARGS* ca = get_cumulative_args (ca_v);
 
@@ -1285,8 +1287,7 @@ snowhousecpu_function_arg_advance (cumulative_args_t ca_v,
 
   *ca = (
     //((*ca) <= SNOWHOUSECPU_LAST_ARG_REGNUM - 1
-    ((*ca) < SNOWHOUSECPU_NUM_ARG_REGS
-  )
+    ((*ca) < SNOWHOUSECPU_NUM_ARG_REGS)
     ? *ca + ((3 + SNOWHOUSECPU_FUNCTION_ARG_SIZE (arg.mode, arg.type))
       / UNITS_PER_WORD)
     : *ca);
@@ -2071,41 +2072,40 @@ snowhousecpu_asm_named_section (const char *name, unsigned int flags, tree decl)
 //  }
 //  return false;
 //}
-static void
-snowhousecpu_setup_incoming_varargs
-  (cumulative_args_t ca_v,
-  const function_arg_info& arg ATTRIBUTE_UNUSED,
-  int *pretend_args_size, int no_rtl)
-{
-  CUMULATIVE_ARGS* ca = get_cumulative_args (ca_v);
-  int nregs = SNOWHOUSECPU_NUM_ARG_REGS - (*ca);
-  
-  *pretend_args_size = (nregs < 0) ? 0 : (UNITS_PER_WORD * nregs);
-  
-  if (no_rtl)
-  {
-    return;
-  }
-  
-  for (int other_regno=*ca; other_regno<SNOWHOUSECPU_NUM_ARG_REGS; ++other_regno)
-  {
-    int regno = other_regno + SNOWHOUSECPU_FIRST_ARG_REGNUM;
-    rtx reg = gen_rtx_REG (SImode, regno);
-    rtx slot = gen_rtx_PLUS
-      (Pmode,
-      gen_rtx_REG (SImode, ARG_POINTER_REGNUM),
-      GEN_INT (UNITS_PER_WORD * (regno - 1)));
-      //rtx slot = gen_rtx_PLUS (Pmode,
-      //                      gen_rtx_REG (SImode, ARG_POINTER_REGNUM),
-      //                      GEN_INT (UNITS_PER_WORD * regno /*(3 + (regno-2))*/));
-    
-    emit_move_insn (gen_rtx_MEM (SImode, slot), reg);
-  }
-  if (REG_PARM_STACK_SPACE (cfun->decl) == 0)
-  {
-    cfun->machine->varargs_extra_stack_size = nregs * UNITS_PER_WORD;
-  }
-}
+//static void
+//snowhousecpu_setup_incoming_varargs
+//  (cumulative_args_t ca_v,
+//  const function_arg_info& arg ATTRIBUTE_UNUSED,
+//  int *pretend_args_size, int no_rtl)
+//{
+//  CUMULATIVE_ARGS* ca = get_cumulative_args (ca_v);
+//  int nregs = SNOWHOUSECPU_NUM_ARG_REGS - (*ca);
+//  
+//  *pretend_args_size = (nregs < 0) ? 0 : (UNITS_PER_WORD * nregs);
+//  
+//  if (!no_rtl)
+//  {
+//    for (int other_regno=*ca; other_regno<SNOWHOUSECPU_NUM_ARG_REGS; ++other_regno)
+//    {
+//      int regno = other_regno + SNOWHOUSECPU_FIRST_ARG_REGNUM;
+//      rtx reg = gen_rtx_REG (SImode, regno);
+//      rtx slot = gen_rtx_PLUS
+//        (Pmode,
+//        gen_rtx_REG (SImode, ARG_POINTER_REGNUM),
+//        GEN_INT (UNITS_PER_WORD * (regno - 1)));
+//        //rtx slot = gen_rtx_PLUS (Pmode,
+//        //                      gen_rtx_REG (SImode, ARG_POINTER_REGNUM),
+//        //                      GEN_INT (UNITS_PER_WORD * regno /*(3 + (regno-2))*/));
+//      
+//      emit_move_insn (gen_rtx_MEM (SImode, slot), reg);
+//    }
+//    //return;
+//  }
+//  if (REG_PARM_STACK_SPACE (cfun->decl) == 0)
+//  {
+//    cfun->machine->varargs_extra_stack_size = nregs * UNITS_PER_WORD;
+//  }
+//}
 //static void
 //snowhousecpu_emit_compare (enum rtx_code *code, rtx *op0, rtx *op1)
 //{
@@ -2359,8 +2359,10 @@ const char *snowhousecpu_asm_unaligned_ti_op = NULL;
 #undef  TARGET_ADDR_SPACE_LEGITIMATE_ADDRESS_P
 #define TARGET_ADDR_SPACE_LEGITIMATE_ADDRESS_P snowhousecpu_legitimate_address_p
 
-#undef  TARGET_SETUP_INCOMING_VARARGS
-#define TARGET_SETUP_INCOMING_VARARGS snowhousecpu_setup_incoming_varargs
+//#undef  TARGET_SETUP_INCOMING_VARARGS
+//#define TARGET_SETUP_INCOMING_VARARGS snowhousecpu_setup_incoming_varargs
+//#undef TARGET_STRICT_ARGUMENT_NAMING
+//#define TARGET_STRICT_ARGUMENT_NAMING hook_bool_CUMULATIVE_ARGS_true
 
 //#undef TARGET_SECONDARY_RELOAD
 //#define TARGET_SECONDARY_RELOAD snowhousecpu_secondary_reload

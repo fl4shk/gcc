@@ -663,11 +663,11 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 //#define REG_PARM_STACK_SPACE(FNDECL) (6 * UNITS_PER_WORD)
 #define REG_PARM_STACK_SPACE(FNDECL) 0
 
-// A C statement (sans semicolon) for initializing the variable CUM
+// A C statement (sans semicolon) for initializing the variable CA
 // for the state at the beginning of the argument list.
 // For snowhousecpu, the first arg is passed in register 1 (aka r1).
 #define INIT_CUMULATIVE_ARGS(CA,FNTYPE,LIBNAME,FNDECL,N_NAMED_ARGS) \
-  /* (CUM = SNOWHOUSECPU_R0) */ \
+  /* (CA = SNOWHOUSECPU_R1) */ \
   (CA = 0u /*SNOWHOUSECPU_FIRST_ARG_REGNUM*/)
 
 
