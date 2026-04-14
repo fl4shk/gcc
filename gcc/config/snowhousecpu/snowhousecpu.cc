@@ -122,6 +122,8 @@ struct GTY (()) machine_function
 
   /* # of bytes of static stack space allocated by the function. */
   int static_stack_size;
+
+  int varargs_extra_stack_size;
 };
 
 static constexpr int STACK_ALIGNMENT = STACK_BOUNDARY / BITS_PER_UNIT;
@@ -145,8 +147,11 @@ static void
 update_local_vars_size (struct machine_function* self)
 {
   // Padding needed for each element of the frame.
-  self->local_vars_size = SNOWHOUSECPU_STACK_ALIGN
-    (HOST_WIDE_INT (get_frame_size ()));
+  self->local_vars_size = (
+    SNOWHOUSECPU_STACK_ALIGN
+    (HOST_WIDE_INT (get_frame_size ()))
+    + (HOST_WIDE_INT (self->varargs_extra_stack_size))
+  );
   snowhousecpu_stack_debug_fprintf (
     stderr,
     "snowhousecpu debug: update_local_vars_size(): %u\n",
@@ -2073,7 +2078,7 @@ snowhousecpu_setup_incoming_varargs
   CUMULATIVE_ARGS* ca = get_cumulative_args (ca_v);
   int nregs = SNOWHOUSECPU_NUM_ARG_REGS - (*ca);
   
-  *pretend_args_size = (nregs < 0) ? 0 : (GET_MODE_SIZE (SImode) * nregs);
+  *pretend_args_size = (nregs < 0) ? 0 : (UNITS_PER_WORD * nregs);
   
   if (no_rtl)
   {
@@ -2093,6 +2098,10 @@ snowhousecpu_setup_incoming_varargs
       //                      GEN_INT (UNITS_PER_WORD * regno /*(3 + (regno-2))*/));
     
     emit_move_insn (gen_rtx_MEM (SImode, slot), reg);
+  }
+  if (REG_PARM_STACK_SPACE (cfun->decl) == 0)
+  {
+    cfun->machine->varargs_extra_stack_size = nregs * UNITS_PER_WORD;
   }
 }
 //static void
