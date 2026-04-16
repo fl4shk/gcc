@@ -1283,6 +1283,11 @@ snowhousecpu_function_arg_advance (cumulative_args_t ca_v,
   const function_arg_info& arg
   )
 {
+  if (!arg.named)
+  {
+    return;
+  }
+
   CUMULATIVE_ARGS* ca = get_cumulative_args (ca_v);
 
   *ca = (
@@ -2361,8 +2366,8 @@ const char *snowhousecpu_asm_unaligned_ti_op = NULL;
 
 //#undef  TARGET_SETUP_INCOMING_VARARGS
 //#define TARGET_SETUP_INCOMING_VARARGS snowhousecpu_setup_incoming_varargs
-//#undef TARGET_STRICT_ARGUMENT_NAMING
-//#define TARGET_STRICT_ARGUMENT_NAMING hook_bool_CUMULATIVE_ARGS_true
+#undef TARGET_STRICT_ARGUMENT_NAMING
+#define TARGET_STRICT_ARGUMENT_NAMING hook_bool_CUMULATIVE_ARGS_true
 
 //#undef TARGET_SECONDARY_RELOAD
 //#define TARGET_SECONDARY_RELOAD snowhousecpu_secondary_reload
