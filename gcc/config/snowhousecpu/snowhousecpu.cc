@@ -123,7 +123,7 @@ struct GTY (()) machine_function
   /* # of bytes of static stack space allocated by the function. */
   int static_stack_size;
 
-  int varargs_extra_stack_size;
+  //int varargs_extra_stack_size;
 };
 
 static constexpr int STACK_ALIGNMENT = STACK_BOUNDARY / BITS_PER_UNIT;
@@ -150,7 +150,7 @@ update_local_vars_size (struct machine_function* self)
   self->local_vars_size = (
     SNOWHOUSECPU_STACK_ALIGN
     (HOST_WIDE_INT (get_frame_size ()))
-    + (HOST_WIDE_INT (self->varargs_extra_stack_size))
+    //+ (HOST_WIDE_INT (self->varargs_extra_stack_size))
   );
   snowhousecpu_stack_debug_fprintf (
     stderr,
@@ -1088,14 +1088,14 @@ snowhousecpu_initial_elimination_offset (int from, int to)
     //  - cfun->machine->local_vars_size
     //  - cfun->machine->outgoing_args_size;
     ret
-      = +UNITS_PER_WORD
+      = //+UNITS_PER_WORD
       //+ cfun->machine->stack_args_size
         // we have `!ARGS_GROW_DOWNWARD`, so we don't need to include
         // stack_args_size in this calculation
       + (frame_pointer_needed ? UNITS_PER_WORD : 0)
       + cfun->machine->callee_saved_reg_size
       + cfun->machine->local_vars_size
-      - cfun->machine->varargs_extra_stack_size
+      //- cfun->machine->varargs_extra_stack_size
       + cfun->machine->outgoing_args_size;
   }
   else if (from == ARG_POINTER_REGNUM
@@ -1104,7 +1104,7 @@ snowhousecpu_initial_elimination_offset (int from, int to)
     // if frame_pointer_needed, then we have saved `fp`
     //ret = -UNITS_PER_WORD
     //  - (frame_pointer_needed ? UNITS_PER_WORD : 0);
-    ret = +UNITS_PER_WORD
+    ret = //+UNITS_PER_WORD
       + (frame_pointer_needed ? UNITS_PER_WORD : 0);
   }
   else if (from == FRAME_POINTER_REGNUM
@@ -1123,7 +1123,7 @@ snowhousecpu_initial_elimination_offset (int from, int to)
         + (frame_pointer_needed ? UNITS_PER_WORD : 0x0)
       + cfun->machine->callee_saved_reg_size
       + cfun->machine->local_vars_size
-      - cfun->machine->varargs_extra_stack_size
+      //- cfun->machine->varargs_extra_stack_size
       + cfun->machine->outgoing_args_size;
     //ret
     //  = -UNITS_PER_WORD
@@ -1185,6 +1185,10 @@ snowhousecpu_arg_partial_bytes (cumulative_args_t ca_v,
   const function_arg_info& arg
 )
 {
+  if (!arg.named) {
+    return 0;
+  }
+
   CUMULATIVE_ARGS *ca = get_cumulative_args (ca_v);
   int bytes_left, size;
 

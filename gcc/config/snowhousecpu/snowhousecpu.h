@@ -692,12 +692,12 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 //                    ------------------------
 //                    padding for alignment
 //                    ------------------------
-//                    SOMETIMES: dynamically allocated space on the 
-//                    stack
-//                    ------------------------
 //                    last outgoing arg
 //                    outgoing args (args grow upward)...
 //                    outgoing arg 0x0
+//                    ------------------------
+//                    SOMETIMES: dynamically allocated space on the 
+//                    stack
 //                    ------------------------
 // sp
 // Low (lower address?)
