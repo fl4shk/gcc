@@ -22,7 +22,7 @@
   [
   ;;(REG_R0 0)
   ;;(REG_R1 1)
-  (REG_HI 6)
+  (REG_HI 7)
   (REG_LR 13)
   (REG_FP 14)
   (REG_SP 15)
