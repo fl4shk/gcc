@@ -56,7 +56,7 @@ snowhousecpu_dump_file_debug_rtx (FILE* file, const_rtx x)
 //#define SNOWHOUSECPU_DEBUG
 //#define SNOWHOUSECPU_CONSTRAINT_DEBUG
 //#define SNOWHOUSECPU_CONSTRAINT_4ADDR_DEBUG
-#define SNOWHOUSECPU_STACK_DEBUG
+//#define SNOWHOUSECPU_STACK_DEBUG
 
 #ifdef SNOWHOUSECPU_STACK_DEBUG
 #define snowhousecpu_stack_debug_fprintf(...) \
