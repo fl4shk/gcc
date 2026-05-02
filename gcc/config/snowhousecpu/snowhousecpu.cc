@@ -1107,13 +1107,20 @@ snowhousecpu_initial_elimination_offset (int from, int to)
     ret = //+UNITS_PER_WORD
       + (frame_pointer_needed ? UNITS_PER_WORD : 0);
   }
+  else if (from == ARG_POINTER_REGNUM
+    && to == FRAME_POINTER_REGNUM)
+  {
+    // if frame_pointer_needed, then we have saved `fp`
+    //ret = -UNITS_PER_WORD
+    //  - (frame_pointer_needed ? UNITS_PER_WORD : 0);
+    ret = 0;//+UNITS_PER_WORD
+      //+ (frame_pointer_needed ? UNITS_PER_WORD : 0);
+  }
   else if (from == FRAME_POINTER_REGNUM
     && to == STACK_POINTER_REGNUM)
   {
     snowhousecpu_compute_frame ();
 
-    // if `frame_pointer_needed`, there's technically a "push fp", but the 
-    // compiler perhaps doesn't need to really know about the "push fp".
     // The hard frame pointer is ABOVE the callee-saved registers
     // preservation area (actually points at the very first
     // location in the callee-saved registers preservation area).
@@ -1135,8 +1142,6 @@ snowhousecpu_initial_elimination_offset (int from, int to)
   {
     snowhousecpu_compute_frame ();
 
-    // if `frame_pointer_needed`, there's technically a "push fp", but the 
-    // compiler perhaps doesn't need to really know about the "push fp".
     // The hard frame pointer is ABOVE the callee-saved registers
     // preservation area (actually points at the very first
     // location in the callee-saved registers preservation area).
@@ -1448,16 +1453,33 @@ snowhousecpu_partial_push (int regno, int idx, bool frame_related_p)
     //+ 
     cfun->machine->outgoing_args_size
   );
-  rtx plus, mem, reg;
-  rtx_insn* str_insn;
-  plus = gen_rtx_PLUS (SImode, stack_pointer_rtx, GEN_INT ((idx * UNITS_PER_WORD) + addend));
-  mem = gen_frame_mem (SImode, plus);
-  reg = gen_rtx_REG (SImode, regno);
-  str_insn = emit_insn (gen_rtx_SET (mem, reg));
-  if (frame_related_p)
-  {
-    RTX_FRAME_RELATED_P (str_insn) = 1;
-  }
+  //if (regno != SNOWHOUSECPU_HI) 
+  //{
+    rtx plus, mem, reg;
+    rtx_insn* str_insn;
+    plus = gen_rtx_PLUS (SImode, stack_pointer_rtx, GEN_INT ((idx * UNITS_PER_WORD) + addend));
+    mem = gen_frame_mem (SImode, plus);
+    reg = gen_rtx_REG (SImode, regno);
+    str_insn = emit_insn (gen_rtx_SET (mem, reg));
+    if (frame_related_p)
+    {
+      RTX_FRAME_RELATED_P (str_insn) = 1;
+    }
+  //}
+  //else // if (regno == SNOWHOUSECPU_HI)
+  //{
+  //  rtx plus, mem, reg;
+  //  rtx_insn* str_insn;
+  //  plus = gen_rtx_PLUS (SImode, stack_pointer_rtx, GEN_INT ((idx * UNITS_PER_WORD) + addend));
+  //  mem = gen_frame_mem (SImode, plus);
+  //  reg = gen_rtx_REG (SImode, regno);
+  //  str_insn = emit_insn (gen_rtx_SET (mem, reg));
+  //  if (frame_related_p)
+  //  {
+  //    RTX_FRAME_RELATED_P (str_insn) = 1;
+  //  }
+  //}
+
 }
 static void
 snowhousecpu_partial_pop (int regno, int idx/*, bool frame_related_p*/)
@@ -1466,7 +1488,7 @@ snowhousecpu_partial_pop (int regno, int idx/*, bool frame_related_p*/)
     //cfun->machine->size_for_adjusting_sp
     //0
     //cfun->machine->local_vars_size
-    //+ 
+    //+
     cfun->machine->outgoing_args_size
   );
   rtx plus, mem, reg;
