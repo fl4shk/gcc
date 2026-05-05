@@ -1650,7 +1650,7 @@ snowhousecpu_pop (int regno, int idx, bool finish=false)
 //  }
 //  else
 //  {
-//    // This is for preservring `lr`. For now, we do this even for LEAF functions!
+//    // This is for preserving `lr`. For now, we do this even for LEAF functions!
 //    insn = snowhousecpu_add_to_sp (
 //      -(idx * UNITS_PER_WORD),
 //      REG_FRAME_RELATED_EXPR

@@ -75,7 +75,7 @@
         (mult:SI
         (match_operand:SI 1 "register_operand" "r")
         (match_operand:SI 2 "register_operand" "r")))
-    (use (reg:SI REG_HI))
+    ;;(use (reg:SI REG_HI))
     (clobber (reg:SI REG_HI))]
   ""
   "umulw %0, %1, %2 // mulsi3"

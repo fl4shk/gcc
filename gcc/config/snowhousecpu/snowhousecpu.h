@@ -1030,15 +1030,15 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 // Biggest alignment that any data type can require on this machine, in
 // bits.  Note that this is not the biggest alignment that is supported,
 // just the biggest alignment that, when violated, may cause a fault.
-#define BIGGEST_ALIGNMENT 32
+//#define BIGGEST_ALIGNMENT 32
+#define BIGGEST_ALIGNMENT 128
 
 #define FASTEST_ALIGNMENT 32
-
+//#define FASTEST_ALIGNMENT 8
 
 // Set this nonzero if move instructions will actually fail to work
 // when given unaligned data.
 #define STRICT_ALIGNMENT 1
-
 
 // Alignment of field after `int : 0' in a structure.
 #define EMPTY_FIELD_BOUNDARY 32
@@ -1073,7 +1073,7 @@ snowhousecpu_regno_to_class[FIRST_PSEUDO_REGISTER] =
 #define LOCAL_ALIGNMENT(EXP, ALIGN) \
   (SNOWHOUSECPU_EXPAND_ALIGNMENT (true, EXP, ALIGN))
 
-#define STRUCTURE_SIZE_BOUNDARY FASTEST_ALIGNMENT
+#define STRUCTURE_SIZE_BOUNDARY 8//FASTEST_ALIGNMENT
 
 #undef USER_LABEL_PREFIX
 #define USER_LABEL_PREFIX "_"
