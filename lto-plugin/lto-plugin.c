@@ -1,5 +1,5 @@
 /* LTO plugin for linkers like gold, GNU ld or mold.
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
    Contributed by Rafael Avila de Espindola (espindola@google.com).
 
 This program is free software; you can redistribute it and/or modify
@@ -945,6 +945,17 @@ cleanup_handler (void)
   if (!flto_incremental)
     for (i = 0; i < num_output_files; i++)
       maybe_unlink (output_files[i]);
+  else
+    {
+      /* Keep files in ltrans cache.  */
+      const char* suffix = ".ltrans.o";
+      for (i = 0; i < num_output_files; i++)
+	{
+	  int offset = strlen (output_files[i]) - strlen (suffix);
+	  if (offset < 0 || strcmp (output_files[i] + offset, suffix))
+	    maybe_unlink (output_files[i]);
+	}
+    }
 
   free_2 ();
   return LDPS_OK;

@@ -1,4 +1,4 @@
-# Copyright (C) 2001-2025 Free Software Foundation, Inc.
+# Copyright (C) 2001-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -172,6 +172,7 @@ if { [info exists env(GCC_RUNTEST_PARALLELIZE_DIR)] \
      && [info procs gcc_parallelize_saved_runtest_file_p] == [list] } then {
     global gcc_runtest_parallelize_counter
     global gcc_runtest_parallelize_counter_minor
+    global gcc_runtest_parallelize_limit_minor
     global gcc_runtest_parallelize_enable
     global gcc_runtest_parallelize_dir
     global gcc_runtest_parallelize_last
@@ -212,6 +213,7 @@ if { [info exists env(GCC_RUNTEST_PARALLELIZE_DIR)] \
     #    and investigate if they don't.
     set gcc_runtest_parallelize_counter 0
     set gcc_runtest_parallelize_counter_minor 0
+    set gcc_runtest_parallelize_limit_minor 10
     set gcc_runtest_parallelize_enable 1
     set gcc_runtest_parallelize_dir [getenv GCC_RUNTEST_PARALLELIZE_DIR]
     set gcc_runtest_parallelize_last 0
@@ -219,6 +221,7 @@ if { [info exists env(GCC_RUNTEST_PARALLELIZE_DIR)] \
     proc gcc_parallel_test_run_p { testcase } {
 	global gcc_runtest_parallelize_counter
 	global gcc_runtest_parallelize_counter_minor
+	global gcc_runtest_parallelize_limit_minor
 	global gcc_runtest_parallelize_enable
 	global gcc_runtest_parallelize_dir
 	global gcc_runtest_parallelize_last
@@ -228,10 +231,10 @@ if { [info exists env(GCC_RUNTEST_PARALLELIZE_DIR)] \
 	}
 
 	# Only test the filesystem every 10th iteration
-	incr gcc_runtest_parallelize_counter_minor
-	if { $gcc_runtest_parallelize_counter_minor == 10 } {
+	if { $gcc_runtest_parallelize_counter_minor >= $gcc_runtest_parallelize_limit_minor } {
 	    set gcc_runtest_parallelize_counter_minor 0
 	}
+	incr gcc_runtest_parallelize_counter_minor
 	if { $gcc_runtest_parallelize_counter_minor != 1 } {
 	    #verbose -log "gcc_parallel_test_run_p $testcase $gcc_runtest_parallelize_counter $gcc_runtest_parallelize_last"
 	    return $gcc_runtest_parallelize_last
@@ -550,7 +553,7 @@ proc handle-dg-regexps { text } {
 
 	# Escape newlines in $rexp so that we can print them in
 	# pass/fail results.
-	set escaped_regex [string map {"\n" "\\n"} $rexp]
+	set escaped_regex [string map {"\n" "\\n" "\r" "\\r"} $rexp]
 	verbose "escaped_regex: ${escaped_regex}" 4
 
 	set title "$testname_with_flags dg-regexp $linenum"
@@ -596,15 +599,16 @@ proc aarch64-arch-dg-options { args } {
 
     set add_arch 1
     set add_tune 1
+    set add_override 1
     set checks_output [string equal [lindex $do_what 0] "compile"]
     set options [lindex $args 1]
 
     foreach option [split $options] {
 	switch -glob -- $option {
 	    -march=* { set add_arch 0 }
-	    -mcpu=* { set add_arch 0; set add_tune 0 }
-	    -mtune=* { set add_tune 0 }
-	    -moverride=* { set add_tune 0 }
+	    -mcpu=* { set add_arch 0; set add_tune 0; set add_override 0}
+	    -mtune=* { set add_tune 0; set add_override 0 }
+	    -moverride=* { set add_override 0 }
 	    -save-temps { set checks_output 1 }
 	    --save-temps { set checks_output 1 }
 	    -fdump* { set checks_output 1 }
@@ -616,9 +620,14 @@ proc aarch64-arch-dg-options { args } {
 	append options " $aarch64_default_testing_arch"
     }
 
-    if { $add_tune && $checks_output } {
+    if { $checks_output } {
 	# Turn off any default tuning and codegen tweaks.
-	append options " -mtune=generic -moverride=tune=none"
+        if { $add_tune } {
+            append options " -mtune=generic"
+        }
+        if { $add_override } {
+            append options " -moverride=tune=none"
+        }
     }
 
     uplevel 1 aarch64-old-dg-options [lreplace $args 1 1 $options]

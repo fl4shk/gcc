@@ -9,27 +9,26 @@
  * Source: $(DRUNTIMESRC rt/_dmain2.d)
  */
 
-/* NOTE: This file has been patched from the original DMD distribution to
- * work with the GDC compiler.
- */
 module rt.dmain2;
 
+import core.atomic;
+import core.internal.parseoptions : rt_parseOption;
+import core.stdc.errno : errno;
+import core.stdc.stdio : fflush, fprintf, fwrite, stderr, stdout;
+import core.stdc.stdlib : alloca, EXIT_FAILURE, EXIT_SUCCESS, free, malloc, realloc;
+import core.stdc.string : strerror;
+import rt.config : rt_cmdline_enabled, rt_configOption;
 import rt.memory;
 import rt.sections;
-import core.atomic;
-import core.stdc.stddef;
-import core.stdc.stdlib;
-import core.stdc.string;
-import core.stdc.stdio;   // for printf()
-import core.stdc.errno : errno;
 
 version (Windows)
 {
-    import core.stdc.wchar_;
+    import core.stdc.stdio : fileno;
+    import core.stdc.wchar_ : wcslen;
     import core.sys.windows.basetsd : HANDLE;
     import core.sys.windows.shellapi : CommandLineToArgvW;
-    import core.sys.windows.winbase : FreeLibrary, GetCommandLineW, GetProcAddress,
-        IsDebuggerPresent, LoadLibraryW, LocalFree, WriteFile;
+    import core.sys.windows.winbase : FreeLibrary, GetCommandLineW, GetProcAddress, IsDebuggerPresent, LoadLibraryW,
+        LocalFree, WriteFile;
     import core.sys.windows.wincon : CONSOLE_SCREEN_BUFFER_INFO, GetConsoleOutputCP,
         GetConsoleScreenBufferInfo;
     import core.sys.windows.winnls : CP_UTF8, MultiByteToWideChar, WideCharToMultiByte;
@@ -37,20 +36,16 @@ version (Windows)
     import core.sys.windows.winuser : MB_ICONERROR, MessageBoxW;
 
     pragma(lib, "shell32.lib"); // needed for CommandLineToArgvW
+
+    import core.stdc.stdio : _get_osfhandle;
+}
+else version (Posix)
+{
+    import core.stdc.string : strlen;
 }
 
-version (FreeBSD)
-{
-    import core.stdc.fenv;
-}
-version (NetBSD)
-{
-    import core.stdc.fenv;
-}
-version (DragonFlyBSD)
-{
-    import core.stdc.fenv;
-}
+version (DigitalMars) version (AArch64)
+    version = UseMalloc;   // cuz alloca() is not implemented yet
 
 // not sure why we can't define this in one place, but this is to keep this
 // module from importing core.runtime.
@@ -97,7 +92,7 @@ extern (C) string[] rt_args()
 // be fine to leave it as __gshared.
 extern (C) __gshared bool rt_trapExceptions = true;
 
-alias void delegate(Throwable) ExceptionHandler;
+alias ExceptionHandler = void delegate(Throwable);
 
 /**
  * Keep track of how often rt_init/rt_term were called.
@@ -187,7 +182,7 @@ bool isRuntimeInitialized() @nogc nothrow {
 /**********************************************
  * Trace handler
  */
-alias Throwable.TraceInfo function(void* ptr) TraceHandler;
+alias TraceHandler = Throwable.TraceInfo function(void* ptr);
 private __gshared TraceHandler traceHandler = null;
 private __gshared Throwable.TraceDeallocator traceDeallocator = null;
 
@@ -258,7 +253,7 @@ extern (C) CArgs rt_cArgs() @nogc
 }
 
 /// Type of the D main() function (`_Dmain`).
-private alias extern(C) int function(char[][] args) MainFunc;
+private alias MainFunc = extern(C) int function(char[][] args);
 
 /**
  * Sets up the D char[][] command-line args, initializes druntime,
@@ -287,14 +282,30 @@ extern (C) int _d_run_main(int argc, char** argv, MainFunc mainFunc)
         // assert(wargc == argc); /* argc can be broken by Unicode arguments */
 
         // Allocate args[] on the stack - use wargc
-        char[][] args = (cast(char[]*) alloca(wargc * (char[]).sizeof))[0 .. wargc];
+        version (UseMalloc)
+        {
+            char[][] args = (cast(char[]*) malloc(wargc * (char[]).sizeof))[0 .. wargc];
+            if (wargc)
+                assert(args.ptr);
+            scope (exit) free(args.ptr);
+        }
+        else
+            char[][] args = (cast(char[]*) alloca(wargc * (char[]).sizeof))[0 .. wargc];
 
         // This is required because WideCharToMultiByte requires int as input.
         assert(wCommandLineLength <= cast(size_t) int.max, "Wide char command line length must not exceed int.max");
 
         immutable size_t totalArgsLength = WideCharToMultiByte(CP_UTF8, 0, wCommandLine, cast(int)wCommandLineLength, null, 0, null, null);
         {
-            char* totalArgsBuff = cast(char*) alloca(totalArgsLength);
+            version (UseMalloc)
+            {
+                char* totalArgsBuff = cast(char*) malloc(totalArgsLength);
+                if (totalArgsLength)
+                    assert(totalArgsBuff);
+                scope (exit) free(totalArgsBuff);
+            }
+            else
+                char* totalArgsBuff = cast(char*) alloca(totalArgsLength);
             size_t j = 0;
             foreach (i; 0 .. wargc)
             {
@@ -316,7 +327,15 @@ extern (C) int _d_run_main(int argc, char** argv, MainFunc mainFunc)
     else version (Posix)
     {
         // Allocate args[] on the stack
-        char[][] args = (cast(char[]*) alloca(argc * (char[]).sizeof))[0 .. argc];
+        version (UseMalloc)
+        {
+            char[][] args = (cast(char[]*) malloc(argc * (char[]).sizeof))[0 .. argc];
+            if (argc)
+                assert(args.ptr);
+            scope (exit) free(args.ptr);
+        }
+        else
+            char[][] args = (cast(char[]*) alloca(argc * (char[]).sizeof))[0 .. argc];
 
         size_t totalArgsLength = 0;
         foreach (i, ref arg; args)
@@ -442,12 +461,21 @@ private extern (C) int _d_run_main2(char[][] args, size_t totalArgsLength, MainF
      */
     {
         _d_args = cast(string[]) args;
-        auto buff = cast(char[]*) alloca(args.length * (char[]).sizeof + totalArgsLength);
+
+        auto length = args.length * (char[]).sizeof + totalArgsLength;
+        version (UseMalloc)
+        {
+            auto buff = cast(char[]*) malloc(length);
+            if (length)
+                assert(buff);
+            //scope (exit) buff;
+        }
+        else
+            auto buff = cast(char[]*) alloca(length);
 
         char[][] argsCopy = buff[0 .. args.length];
         auto argBuff = cast(char*) (buff + args.length);
         size_t j = 0;
-        import rt.config : rt_cmdline_enabled;
         bool parseOpts = rt_cmdline_enabled!();
         foreach (arg; args)
         {
@@ -524,9 +552,9 @@ private extern (C) int _d_run_main2(char[][] args, size_t totalArgsLength, MainF
                 if (utResult.summarize)
                 {
                     if (utResult.passed == 0)
-                        .fprintf(.stderr, "No unittests run\n");
+                        .fprintf(cast().stderr, "No unittests run\n");
                     else
-                        .fprintf(.stderr, "%d modules passed unittests\n",
+                        .fprintf(cast().stderr, "%d modules passed unittests\n",
                                  cast(int)utResult.passed);
                 }
                 if (utResult.runMain)
@@ -537,7 +565,7 @@ private extern (C) int _d_run_main2(char[][] args, size_t totalArgsLength, MainF
             else
             {
                 if (utResult.summarize)
-                    .fprintf(.stderr, "%d/%d modules FAILED unittests\n",
+                    .fprintf(cast().stderr, "%d/%d modules FAILED unittests\n",
                              cast(int)(utResult.executed - utResult.passed),
                              cast(int)utResult.executed);
                 result = EXIT_FAILURE;
@@ -558,9 +586,9 @@ private extern (C) int _d_run_main2(char[][] args, size_t totalArgsLength, MainF
     tryExec(&runAll);
 
     // Issue 10344: flush stdout and return nonzero on failure
-    if (.fflush(.stdout) != 0)
+    if (.fflush(cast().stdout) != 0)
     {
-        .fprintf(.stderr, "Failed to flush stdout: %s\n", .strerror(.errno));
+        .fprintf(cast().stderr, "Failed to flush stdout: %s\n", .strerror(.errno));
         if (result == 0)
         {
             result = EXIT_FAILURE;
@@ -590,8 +618,6 @@ private void formatThrowable(Throwable t, scope void delegate(in char[] s) nothr
 
 private auto parseExceptionOptions()
 {
-    import rt.config : rt_configOption;
-    import core.internal.parseoptions : rt_parseOption;
     const optName = "trapExceptions";
     auto option = rt_configOption(optName);
     auto trap = rt_trapExceptions;
@@ -639,7 +665,7 @@ extern (C) void _d_print_throwable(Throwable t)
 
         // ensure the exception is shown at the beginning of the line, while also
         // checking whether stderr is a valid file
-        int written = fprintf(stderr, "\n");
+        int written = fprintf(cast()stderr, "\n");
         if (written <= 0)
         {
             WSink buf;
@@ -655,7 +681,7 @@ extern (C) void _d_print_throwable(Throwable t)
                 // by loading it dynamically as needed
                 if (auto user32 = LoadLibraryW("user32.dll"))
                 {
-                    alias typeof(&MessageBoxW) PMessageBoxW;
+                    alias PMessageBoxW = typeof(&MessageBoxW) ;
                     if (auto pMessageBoxW = cast(PMessageBoxW) GetProcAddress(user32, "MessageBoxW"))
                         pMessageBoxW(null, buf.get(), caption.get(), MB_ICONERROR);
                     FreeLibrary(user32);
@@ -665,7 +691,7 @@ extern (C) void _d_print_throwable(Throwable t)
             }
             return;
         }
-        auto hStdErr = windowsHandle(fileno(stderr));
+        auto hStdErr = windowsHandle(fileno(cast()stderr));
         CONSOLE_SCREEN_BUFFER_INFO sbi = void;
         const isConsole = GetConsoleScreenBufferInfo(hStdErr, &sbi) != 0;
         if (isConsole)
@@ -693,7 +719,7 @@ extern (C) void _d_print_throwable(Throwable t)
 
     void sink(in char[] buf) scope nothrow
     {
-        fwrite(buf.ptr, char.sizeof, buf.length, stderr);
+        fwrite(buf.ptr, char.sizeof, buf.length, cast()stderr);
     }
     formatThrowable(t, &sink);
 }

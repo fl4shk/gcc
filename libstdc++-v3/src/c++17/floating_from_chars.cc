@@ -1,6 +1,6 @@
 // std::from_chars implementation for floating-point types -*- C++ -*-
 
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -45,7 +45,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <locale.h>
-#include <bits/functexcept.h>
 #if _GLIBCXX_HAVE_XLOCALE_H
 # include <xlocale.h>
 #endif
@@ -1102,7 +1101,7 @@ namespace
       {
 	// If the leading hexit is not '1', shift MANTISSA to make it so.
 	// This normalizes input like "4.08p0" into "1.02p2".
-	const int leading_hexit = mantissa >> mantissa_bits;
+	const unsigned leading_hexit = mantissa >> mantissa_bits;
 	const int leading_hexit_width = __bit_width(leading_hexit); // FIXME: optimize?
 	__glibcxx_assert(leading_hexit_width >= 1 && leading_hexit_width <= 4);
 	shift_mantissa(leading_hexit_width - 1);

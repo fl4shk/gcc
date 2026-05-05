@@ -1,7 +1,7 @@
 /* Declarations of core diagnostic functionality for code that does
    not need to deal with diagnostic contexts or diagnostic info
-   structures.
-   Copyright (C) 1998-2025 Free Software Foundation, Inc.
+   structures.  These functions implicitly use global_dc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -23,23 +23,10 @@ along with GCC; see the file COPYING3.  If not see
 #define GCC_DIAGNOSTIC_CORE_H
 
 #include "bversion.h"
+#include "diagnostics/kinds.h"
+#include "diagnostics/option-id.h"
 
-/* Constants used to discriminate diagnostics.  */
-typedef enum
-{
-#define DEFINE_DIAGNOSTIC_KIND(K, msgid, C) K,
-#include "diagnostic.def"
-#undef DEFINE_DIAGNOSTIC_KIND
-  DK_LAST_DIAGNOSTIC_KIND,
-  /* This is used for tagging pragma pops in the diagnostic
-     classification history chain.  */
-  DK_POP,
-  /* This is used internally to note that a diagnostic is enabled
-     without mandating any specific type.  */
-  DK_ANY,
-} diagnostic_t;
-
-/* RAII-style class for grouping related diagnostics.  */
+/* RAII-style class for grouping related diagnostics within global_dc.  */
 
 class auto_diagnostic_group
 {
@@ -48,7 +35,7 @@ class auto_diagnostic_group
   ~auto_diagnostic_group ();
 };
 
-/* RAII-style class for nesting hierarchical diagnostics.
+/* RAII-style class for nesting hierarchical diagnostics within global_dc.
    Any diagnostics emitted within the lifetime of this object
    will be treated as one level of nesting deeper than diagnostics
    emitted outside the lifetime of the object.  */
@@ -61,32 +48,16 @@ class auto_diagnostic_nesting_level
 };
 
 /* Forward decl.  */
-class diagnostic_metadata; /* See diagnostic-metadata.h.  */
-
-/* A class to use for the ID of an option that controls
-   a particular diagnostic.
-   This is just a wrapper around "int", but better documents
-   the intent of the code.  */
-
-struct diagnostic_option_id
-{
-  diagnostic_option_id () : m_idx (0) {}
-
-  diagnostic_option_id (int idx) : m_idx (idx) {}
-  /* Ideally we'd take an enum opt_code here, but we don't
-     want to depend on its decl.  */
-
-  bool operator== (diagnostic_option_id other) const
-  {
-    return m_idx == other.m_idx;
-  }
-
-  int m_idx;
-};
+namespace diagnostics {
+   class metadata; /* See diagnostics/metadata.h.  */
+} // namespace diagnostics
 
 extern const char *progname;
 
 extern const char *trim_filename (const char *);
+
+/* Various functions for emitting diagnostics follow.
+   All of these implicitly use global_dc.  */
 
 /* If we haven't already defined a front-end-specific diagnostics
    style, use the generic one.  */
@@ -106,29 +77,29 @@ extern void internal_error (const char *, ...) ATTRIBUTE_GCC_DIAG(1,2)
 extern void internal_error_no_backtrace (const char *, ...)
      ATTRIBUTE_GCC_DIAG(1,2) ATTRIBUTE_NORETURN;
 /* Pass one of the OPT_W* from options.h as the first parameter.  */
-extern bool warning (diagnostic_option_id,
+extern bool warning (diagnostics::option_id,
 		     const char *, ...) ATTRIBUTE_GCC_DIAG(2,3);
 extern bool warning_n (location_t,
-		       diagnostic_option_id,
+		       diagnostics::option_id,
 		       unsigned HOST_WIDE_INT,
 		       const char *, const char *, ...)
     ATTRIBUTE_GCC_DIAG(4,6) ATTRIBUTE_GCC_DIAG(5,6);
 extern bool warning_n (rich_location *,
-		       diagnostic_option_id,
+		       diagnostics::option_id,
 		       unsigned HOST_WIDE_INT,
 		       const char *, const char *, ...)
     ATTRIBUTE_GCC_DIAG(4, 6) ATTRIBUTE_GCC_DIAG(5, 6);
 extern bool warning_at (location_t,
-			diagnostic_option_id,
+			diagnostics::option_id,
 			const char *, ...)
     ATTRIBUTE_GCC_DIAG(3,4);
 extern bool warning_at (rich_location *,
-			diagnostic_option_id,
+			diagnostics::option_id,
 			const char *, ...)
     ATTRIBUTE_GCC_DIAG(3,4);
 extern bool warning_meta (rich_location *,
-			  const diagnostic_metadata &,
-			  diagnostic_option_id,
+			  const diagnostics::metadata &,
+			  diagnostics::option_id,
 			  const char *, ...)
     ATTRIBUTE_GCC_DIAG(4,5);
 extern void error (const char *, ...) ATTRIBUTE_GCC_DIAG(1,2);
@@ -138,29 +109,29 @@ extern void error_n (location_t, unsigned HOST_WIDE_INT, const char *,
 extern void error_at (location_t, const char *, ...) ATTRIBUTE_GCC_DIAG(2,3);
 extern void error_at (rich_location *, const char *, ...)
   ATTRIBUTE_GCC_DIAG(2,3);
-extern void error_meta (rich_location *, const diagnostic_metadata &,
+extern void error_meta (rich_location *, const diagnostics::metadata &,
 			const char *, ...)
   ATTRIBUTE_GCC_DIAG(3,4);
 extern void fatal_error (location_t, const char *, ...) ATTRIBUTE_GCC_DIAG(2,3)
      ATTRIBUTE_NORETURN;
 /* Pass one of the OPT_W* from options.h as the second parameter.  */
 extern bool pedwarn (location_t,
-		     diagnostic_option_id,
+		     diagnostics::option_id,
 		     const char *, ...)
      ATTRIBUTE_GCC_DIAG(3,4);
 extern bool pedwarn (rich_location *,
-		     diagnostic_option_id,
+		     diagnostics::option_id,
 		     const char *, ...)
      ATTRIBUTE_GCC_DIAG(3,4);
 extern bool permerror (location_t, const char *, ...) ATTRIBUTE_GCC_DIAG(2,3);
 extern bool permerror (rich_location *, const char *,
 				   ...) ATTRIBUTE_GCC_DIAG(2,3);
 extern bool permerror_opt (location_t,
-			   diagnostic_option_id,
+			   diagnostics::option_id,
 			   const char *, ...)
   ATTRIBUTE_GCC_DIAG(3,4);
 extern bool permerror_opt (rich_location *,
-			   diagnostic_option_id,
+			   diagnostics::option_id,
 			   const char *, ...)
   ATTRIBUTE_GCC_DIAG(3,4);
 extern void sorry (const char *, ...) ATTRIBUTE_GCC_DIAG(1,2);
@@ -171,23 +142,23 @@ extern void inform_n (location_t, unsigned HOST_WIDE_INT, const char *,
 		      const char *, ...)
     ATTRIBUTE_GCC_DIAG(3,5) ATTRIBUTE_GCC_DIAG(4,5);
 extern void verbatim (const char *, ...) ATTRIBUTE_GCC_DIAG(1,2);
-extern bool emit_diagnostic (diagnostic_t,
+extern bool emit_diagnostic (enum diagnostics::kind,
 			     location_t,
-			     diagnostic_option_id,
+			     diagnostics::option_id,
 			     const char *, ...) ATTRIBUTE_GCC_DIAG(4,5);
-extern bool emit_diagnostic (diagnostic_t,
+extern bool emit_diagnostic (enum diagnostics::kind,
 			     rich_location *,
-			     diagnostic_option_id,
+			     diagnostics::option_id,
 			     const char *, ...) ATTRIBUTE_GCC_DIAG(4,5);
-extern bool emit_diagnostic_valist (diagnostic_t,
+extern bool emit_diagnostic_valist (enum diagnostics::kind,
 				    location_t,
-				    diagnostic_option_id,
+				    diagnostics::option_id,
 				    const char *, va_list *)
   ATTRIBUTE_GCC_DIAG (4,0);
-extern bool emit_diagnostic_valist_meta (diagnostic_t,
+extern bool emit_diagnostic_valist_meta (enum diagnostics::kind,
 					 rich_location *,
-					 const diagnostic_metadata *,
-					 diagnostic_option_id,
+					 const diagnostics::metadata *,
+					 diagnostics::option_id,
 					 const char *,
 					 va_list *) ATTRIBUTE_GCC_DIAG (5,0);
 extern bool seen_error (void);

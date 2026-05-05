@@ -1,5 +1,5 @@
 /* { dg-do compile } */
-/* { dg-options "-O2 -mvaes -mevex512 -mno-xsave -Wno-psabi" } */
+/* { dg-options "-O2 -mvaes -mno-xsave -Wno-psabi" } */
 
 typedef __attribute__((__vector_size__(64))) char V;
 

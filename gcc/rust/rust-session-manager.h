@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -223,9 +223,14 @@ struct CompileOptions
     HIR_DUMP,
     HIR_DUMP_PRETTY,
     BIR_DUMP,
+    INTERNAL_DUMP,
   };
 
   std::set<DumpOption> dump_options;
+
+  /* List of node that is not print during the dump of the ast with internal
+   * comment */
+  std::set<std::string> excluded_node;
 
   /* configuration options - actually useful for conditional compilation and
    * whatever data related to target arch, features, os, family, env, endian,
@@ -236,6 +241,24 @@ struct CompileOptions
   bool enable_test = false;
   bool debug_assertions = false;
   std::string metadata_output_path;
+
+  /** Structure containing additional attributes to be injected within the
+   * compiled crate from the command line instead of the source code.
+   *
+   * To make things a bit easier with rustc, we're trying to use the same
+   * format accepted by -Zcrate-attr. This means the CLI accepts the text
+   * content of the attribute and not text of the whole attribute itself.
+   */
+  struct CliAttributeContent
+  {
+    CliAttributeContent (std::string content, location_t locus)
+      : content (content), locus (locus)
+    {}
+    /* Content of the attribute*/
+    std::string content;
+    location_t locus;
+  };
+  std::vector<CliAttributeContent> addional_attributes;
 
   enum class Edition
   {
@@ -264,6 +287,13 @@ struct CompileOptions
   } compile_until
     = CompileStep::End;
 
+  enum class PanicStrategy
+  {
+    Unwind,
+    Abort,
+  } panic_strategy
+    = PanicStrategy::Unwind;
+
   bool dump_option_enabled (DumpOption option) const
   {
     return dump_options.find (option) != dump_options.end ();
@@ -283,7 +313,16 @@ struct CompileOptions
     enable_dump_option (DumpOption::HIR_DUMP);
     enable_dump_option (DumpOption::HIR_DUMP_PRETTY);
     enable_dump_option (DumpOption::BIR_DUMP);
+    enable_dump_option (DumpOption::INTERNAL_DUMP);
   }
+
+  void add_excluded (std::string node)
+  {
+    rust_assert (!node.empty ());
+    excluded_node.insert (node);
+  }
+
+  const std::set<std::string> get_excluded () const { return excluded_node; }
 
   void set_crate_name (std::string name)
   {
@@ -320,6 +359,13 @@ struct CompileOptions
 
   const CompileStep &get_compile_until () const { return compile_until; }
 
+  void set_panic_strategy (int strategy)
+  {
+    panic_strategy = static_cast<PanicStrategy> (strategy);
+  }
+
+  const PanicStrategy &get_panic_strategy () const { return panic_strategy; }
+
   void set_metadata_output (const std::string &path)
   {
     metadata_output_path = path;
@@ -354,13 +400,12 @@ struct Session
   Linemap *linemap;
 
   // mappings
-  Analysis::Mappings *mappings;
+  Analysis::Mappings &mappings;
 
 public:
   /* Get a reference to the static session instance */
   static Session &get_instance ();
 
-  Session () = default;
   ~Session () = default;
 
   /* This initializes the compiler session. Corresponds to langhook
@@ -377,7 +422,7 @@ public:
 		      const struct cl_option_handlers *handlers);
   void handle_input_files (int num_files, const char **files);
   void init_options ();
-  void handle_crate_name (const AST::Crate &parsed_crate);
+  void handle_crate_name (const char *filename, const AST::Crate &parsed_crate);
 
   /* This function saves the filename data into the session manager using the
    * `move` semantics, and returns a C-style string referencing the input
@@ -391,14 +436,18 @@ public:
   NodeId load_extern_crate (const std::string &crate_name, location_t locus);
 
 private:
+  Session () : mappings (Analysis::Mappings::get ()) {}
   void compile_crate (const char *filename);
   bool enable_dump (std::string arg);
 
   void dump_lex (Parser<Lexer> &parser) const;
   void dump_ast_pretty (AST::Crate &crate, bool expanded = false) const;
+  void dump_ast_pretty_internal (AST::Crate &crate) const;
   void dump_name_resolution (Resolver2_0::NameResolutionContext &ctx) const;
   void dump_hir (HIR::Crate &crate) const;
   void dump_hir_pretty (HIR::Crate &crate) const;
+
+  void handle_excluded_node (std::string arg);
 
   // pipeline stages - TODO maybe move?
   /* Register plugins pipeline stage. TODO maybe move to another object?
@@ -410,7 +459,7 @@ private:
   /* Injection pipeline stage. TODO maybe move to another object? Maybe have
    * some lint checks (in future, obviously), register builtin macros, crate
    * injection. */
-  void injection (AST::Crate &crate);
+  void injection (AST::Crate &crate, AST::AttrVec cli_attributes);
 
   /* Expansion pipeline stage. TODO maybe move to another object? Expands all
    * macros, maybe build test harness in future, AST validation, maybe create
@@ -427,8 +476,7 @@ private:
 
 #if CHECKING_P
 namespace selftest {
-extern void
-rust_crate_name_validation_test (void);
+extern void rust_crate_name_validation_test (void);
 }
 #endif // CHECKING_P
 

@@ -1,7 +1,7 @@
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT(cpplib, [ ], gcc-bugs@gcc.gnu.org, cpplib)
+AC_INIT(cpplib, [ ], https://gcc.gnu.org/bugs/, cpplib)
 AC_CONFIG_SRCDIR(ucnid.h)
 AC_CONFIG_MACRO_DIR(../config)
 AC_CANONICAL_SYSTEM
@@ -81,7 +81,7 @@ define(libcpp_UNLOCKED_FUNCS, clearerr_unlocked feof_unlocked dnl
   fileno_unlocked fprintf_unlocked fputc_unlocked fputs_unlocked dnl
   fread_unlocked fwrite_unlocked getchar_unlocked getc_unlocked dnl
   putchar_unlocked putc_unlocked)
-AC_CHECK_FUNCS(libcpp_UNLOCKED_FUNCS)
+AC_CHECK_FUNCS(libcpp_UNLOCKED_FUNCS setlocale)
 AC_CHECK_DECLS([abort, asprintf, basename(char *), errno, getopt, vasprintf])
 AC_CHECK_DECLS(m4_split(m4_normalize(libcpp_UNLOCKED_FUNCS)))
 
@@ -172,7 +172,7 @@ do
 	esac
 done
 IFS="$ac_save_IFS"
-                
+
 if test x$ac_checking != x ; then
   AC_DEFINE(CHECKING_P, 1,
 [Define to 1 if you want more run-time sanity checks.])

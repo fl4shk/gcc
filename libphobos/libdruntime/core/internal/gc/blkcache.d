@@ -44,8 +44,7 @@ else
 {
     if (!__blkcache_storage)
     {
-        import core.stdc.stdlib;
-        import core.stdc.string;
+        import core.stdc.stdlib : calloc;
         import core.thread.threadbase;
         auto tBase = ThreadBase.getThis();
         if (tBase is null)
@@ -64,17 +63,16 @@ else
 }
 
 // free the allocation on thread exit.
-@standalone static ~this()
+void cleanupBlkCache(void* storage) nothrow @nogc
 {
-    if (__blkcache_storage)
+    if (storage)
     {
-        import core.stdc.stdlib;
-        import core.thread.threadbase;
-        auto tBase = ThreadBase.getThis();
-        if (tBase !is null)
-            tBase.tlsGCData = null;
-        free(__blkcache_storage);
-        __blkcache_storage = null;
+        // check if this is the same thread as the current running thread, and
+        // if so, make sure we don't leave a dangling pointer.
+        if (__blkcache_storage is storage)
+            __blkcache_storage = null;
+        import core.stdc.stdlib : free;
+        free(storage);
     }
 }
 

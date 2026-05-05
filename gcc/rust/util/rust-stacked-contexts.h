@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -69,6 +69,20 @@ public:
     stack.pop_back ();
 
     return last;
+  }
+
+  const T &peek () const
+  {
+    rust_assert (!stack.empty ());
+
+    return stack.back ();
+  }
+
+  T &peek ()
+  {
+    rust_assert (!stack.empty ());
+
+    return stack.back ();
   }
 
   /**

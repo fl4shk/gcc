@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -22,14 +22,15 @@
 #include "rust-system.h"
 #include "rust-location.h"
 #include "rust-hir-full-decls.h"
-#include "rust-tyty-bounds.h"
 #include "rust-tyty-region.h"
+#include "rust-ast.h"
 #include "optional.h"
 
 namespace Rust {
 namespace TyTy {
 
 class ParamType;
+class BaseGeneric;
 
 struct RegionConstraints
 {
@@ -44,22 +45,24 @@ class SubstitutionArgumentMappings;
 class SubstitutionParamMapping
 {
 public:
-  SubstitutionParamMapping (const HIR::TypeParam &generic, ParamType *param);
+  SubstitutionParamMapping (HIR::GenericParam &generic, BaseGeneric *param);
 
   SubstitutionParamMapping (const SubstitutionParamMapping &other);
 
   std::string as_string () const;
 
   bool fill_param_ty (SubstitutionArgumentMappings &subst_mappings,
-		      location_t locus);
+		      location_t locus, bool needs_bounds_check = true);
 
   SubstitutionParamMapping clone () const;
 
-  ParamType *get_param_ty ();
+  BaseGeneric *get_param_ty ();
+  const BaseGeneric *get_param_ty () const;
 
-  const ParamType *get_param_ty () const;
+  HIR::GenericParam &get_generic_param ();
+  const HIR::GenericParam &get_generic_param () const;
 
-  const HIR::TypeParam &get_generic_param () const;
+  Identifier get_type_representation () const;
 
   // this is used for the backend to override the HirId ref of the param to
   // what the concrete type is for the rest of the context
@@ -76,8 +79,8 @@ public:
   bool need_substitution () const;
 
 private:
-  const HIR::TypeParam &generic;
-  ParamType *param;
+  HIR::GenericParam &generic;
+  BaseGeneric *param;
 };
 
 /**
@@ -125,7 +128,7 @@ public:
 				     std::vector<Region> subst)
   {
     RegionParamList list (num_regions);
-    for (size_t i = 0; i < subst.size (); i++)
+    for (size_t i = 0; i < MIN (num_regions, subst.size ()); i++)
       list.regions.at (i) = subst.at (i);
     for (size_t i = subst.size (); i < num_regions; i++)
       {
@@ -147,13 +150,11 @@ public:
 
   SubstitutionArg &operator= (const SubstitutionArg &other);
 
-  BaseType *get_tyty ();
-
-  const BaseType *get_tyty () const;
+  BaseType *get_tyty () const;
 
   const SubstitutionParamMapping *get_param_mapping () const;
 
-  const ParamType *get_param_ty () const;
+  const BaseGeneric *get_param_ty () const;
 
   static SubstitutionArg error ();
 
@@ -165,7 +166,7 @@ public:
 
 private:
   const SubstitutionParamMapping *param;
-  const ParamType *original_param;
+  const BaseGeneric *original_param;
   BaseType *argument;
 };
 
@@ -205,7 +206,7 @@ public:
 
   bool is_error () const;
 
-  bool get_argument_for_symbol (const ParamType *param_to_find,
+  bool get_argument_for_symbol (const BaseGeneric *param_to_find,
 				SubstitutionArg *argument) const;
 
   /** Return type parameter index for symbol */
@@ -253,6 +254,7 @@ private:
   bool error_flag;
 };
 
+class TypeBoundPredicateItem;
 class SubstitutionRef
 {
 public:
@@ -319,7 +321,8 @@ public:
   // we have bindings for X Y Z and need to propagate the binding Y,Z into Foo
   // Which binds to A,B
   SubstitutionArgumentMappings
-  adjust_mappings_for_this (SubstitutionArgumentMappings &mappings);
+  adjust_mappings_for_this (SubstitutionArgumentMappings &mappings,
+			    bool trait_mode = false);
 
   // Are the mappings here actually bound to this type. For example imagine the
   // case:

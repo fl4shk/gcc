@@ -1,5 +1,5 @@
 /* Definitions of target machine for GNU compiler.  LoongArch version.
-   Copyright (C) 2021-2025 Free Software Foundation, Inc.
+   Copyright (C) 2021-2026 Free Software Foundation, Inc.
    Contributed by Loongson Ltd.
    Based on MIPS and RISC-V target for GNU compiler.
 
@@ -158,7 +158,7 @@ along with GCC; see the file COPYING3.  If not see
 #define LONG_LONG_TYPE_SIZE 64
 
 /* LONG_DOUBLE_TYPE_SIZE get poisoned, so add LA_ prefix.  */
-#define LA_LONG_DOUBLE_TYPE_SIZE (TARGET_64BIT ? 128 : 64)
+#define LA_LONG_DOUBLE_TYPE_SIZE 128
 
 /* Define the sizes of fixed-point types.  */
 #define SHORT_FRACT_TYPE_SIZE 8
@@ -171,9 +171,9 @@ along with GCC; see the file COPYING3.  If not see
 #define LONG_ACCUM_TYPE_SIZE 64
 #define LONG_LONG_ACCUM_TYPE_SIZE (TARGET_64BIT ? 128 : 64)
 
-/* long double is not a fixed mode, but the idea is that, if we
-   support long double, we also want a 128-bit integer type.  */
-#define MAX_FIXED_MODE_SIZE LA_LONG_DOUBLE_TYPE_SIZE
+/* An integer expression for the size in bits of the largest integer machine
+   mode that should actually be used.  */
+#define MAX_FIXED_MODE_SIZE GET_MODE_BITSIZE (TARGET_64BIT ? TImode : DImode)
 
 /* Width in bits of a pointer.  */
 #ifndef POINTER_SIZE
@@ -270,7 +270,9 @@ along with GCC; see the file COPYING3.  If not see
   if (GET_MODE_CLASS (MODE) == MODE_INT \
       && GET_MODE_SIZE (MODE) < UNITS_PER_WORD) \
     { \
-      if ((MODE) == SImode) \
+      if ((MODE) == SImode \
+	  && !(TYPE && TREE_CODE (TYPE) == BITINT_TYPE \
+	       && TYPE_PRECISION (TYPE) < 32)) \
 	(UNSIGNEDP) = 0; \
       (MODE) = Pmode; \
     }
@@ -654,6 +656,9 @@ enum reg_class
 
 #define REG_PARM_STACK_SPACE(FNDECL) 0
 
+/* If the size of struct <= 2 * GRLEN, pass by registers if available.  */
+#define DEFAULT_PCC_STRUCT_RETURN 0
+
 /* Define this if it is the responsibility of the caller to
    allocate the area reserved for arguments passed in registers.
    If `ACCUMULATE_OUTGOING_ARGS' is also defined, the only effect
@@ -661,7 +666,7 @@ enum reg_class
    `crtl->outgoing_args_size'.  */
 #define OUTGOING_REG_PARM_STACK_SPACE(FNTYPE) 1
 
-#define STACK_BOUNDARY (TARGET_ABI_LP64 ? 128 : 64)
+#define STACK_BOUNDARY 128
 
 /* This value controls how many pages we manually unroll the loop for when
    generating stack clash probes.  */
@@ -748,8 +753,7 @@ typedef struct {
 
 /* Treat LOC as a byte offset from the stack pointer and round it up
    to the next fully-aligned offset.  */
-#define LARCH_STACK_ALIGN(LOC) \
-  (TARGET_ABI_LP64 ? ROUND_UP ((LOC), 16) : ROUND_UP ((LOC), 8))
+#define LARCH_STACK_ALIGN(LOC) ROUND_UP ((LOC), 16)
 
 #define MCOUNT_NAME "_mcount"
 
@@ -779,8 +783,7 @@ typedef struct {
 
 #define TRAMPOLINE_CODE_SIZE 16
 #define TRAMPOLINE_SIZE \
-  ((Pmode == SImode) ? TRAMPOLINE_CODE_SIZE \
-		     : (TRAMPOLINE_CODE_SIZE + POINTER_SIZE * 2))
+	  (TRAMPOLINE_CODE_SIZE + GET_MODE_SIZE (ptr_mode) * 2)
 #define TRAMPOLINE_ALIGNMENT POINTER_SIZE
 
 /* loongarch_trampoline_init calls this library function to flush
@@ -822,8 +825,6 @@ typedef struct {
   while (0)
 
 #define CASE_VECTOR_MODE Pmode
-
-#define CASE_VECTOR_SHORTEN_MODE(MIN, MAX, BODY) Pmode
 
 /* Define this as 1 if `char' should by default be signed; else as 0.  */
 #ifndef DEFAULT_SIGNED_CHAR
@@ -941,6 +942,38 @@ typedef struct {
   { "s6",	29 + GP_REG_FIRST },					\
   { "s7",	30 + GP_REG_FIRST },					\
   { "s8",	31 + GP_REG_FIRST },					\
+  { "fa0",	 0 + FP_REG_FIRST },					\
+  { "fa1",	 1 + FP_REG_FIRST },					\
+  { "fa2",	 2 + FP_REG_FIRST },					\
+  { "fa3",	 3 + FP_REG_FIRST },					\
+  { "fa4",	 4 + FP_REG_FIRST },					\
+  { "fa5",	 5 + FP_REG_FIRST },					\
+  { "fa6",	 6 + FP_REG_FIRST },					\
+  { "fa7",	 7 + FP_REG_FIRST },					\
+  { "ft0",	 8 + FP_REG_FIRST },					\
+  { "ft1",	 9 + FP_REG_FIRST },					\
+  { "ft2",	10 + FP_REG_FIRST },					\
+  { "ft3",	11 + FP_REG_FIRST },					\
+  { "ft4",	12 + FP_REG_FIRST },					\
+  { "ft5",	13 + FP_REG_FIRST },					\
+  { "ft6",	14 + FP_REG_FIRST },					\
+  { "ft7",	15 + FP_REG_FIRST },					\
+  { "ft8",	16 + FP_REG_FIRST },					\
+  { "ft9",	17 + FP_REG_FIRST },					\
+  { "ft10",	18 + FP_REG_FIRST },					\
+  { "ft11",	19 + FP_REG_FIRST },					\
+  { "ft12",	20 + FP_REG_FIRST },					\
+  { "ft13",	21 + FP_REG_FIRST },					\
+  { "ft14",	22 + FP_REG_FIRST },					\
+  { "ft15",	23 + FP_REG_FIRST },					\
+  { "fs0",	24 + FP_REG_FIRST },					\
+  { "fs1",	25 + FP_REG_FIRST },					\
+  { "fs2",	26 + FP_REG_FIRST },					\
+  { "fs3",	27 + FP_REG_FIRST },					\
+  { "fs4",	28 + FP_REG_FIRST },					\
+  { "fs5",	29 + FP_REG_FIRST },					\
+  { "fs6",	30 + FP_REG_FIRST },					\
+  { "fs7",	31 + FP_REG_FIRST },					\
   { "v0",	 4 + GP_REG_FIRST },					\
   { "v1",	 5 + GP_REG_FIRST },					\
   { "vr0",	 0 + FP_REG_FIRST },					\
@@ -1261,3 +1294,5 @@ struct GTY (()) machine_function
 
 #define TARGET_EXPLICIT_RELOCS \
   (la_opt_explicit_relocs == EXPLICIT_RELOCS_ALWAYS)
+
+#define TARGET_HAS_FMV_TARGET_ATTRIBUTE 0

@@ -52,7 +52,7 @@ CrateCtx::query_type_regions (BaseType *type)
   return private_ctx->query_type_regions (type);
 }
 
-std::vector<size_t>
+FreeRegions
 CrateCtx::query_field_regions (const ADTType *parent, size_t variant_index,
 			       size_t field_index,
 			       const FreeRegions &parent_regions)
@@ -199,9 +199,7 @@ GenericTyPerCrateCtx::debug_print_solutions ()
 	    {
 	      if (i > solution_index)
 		result += ", ";
-	      result += param.get_generic_param ()
-			  .get_type_representation ()
-			  .as_string ();
+	      result += param.get_type_representation ().as_string ();
 	      result += "=";
 	      result += solutions[i].as_string ();
 	      i++;
@@ -238,13 +236,13 @@ GenericTyVisitorCtx::process_type (ADTType &ty)
   first_lifetime = lookup_or_add_type (ty.get_orig_ref ());
   first_type = first_lifetime + ty.get_used_arguments ().get_regions ().size ();
 
-  for (const auto &param : ty.get_substs ())
-    param_names.push_back (
-      param.get_generic_param ().get_type_representation ().as_string ());
+  for (auto &param : ty.get_substs ())
+    param_names.push_back (param.get_type_representation ().as_string ());
 
   for (const auto &variant : ty.get_variants ())
     {
-      if (variant->get_variant_type () != VariantDef::NUM)
+      if (variant->get_variant_type () != VariantDef::NUM
+	  && variant->get_variant_type () != VariantDef::UNIT)
 	{
 	  for (const auto &field : variant->get_fields ())
 	    add_constraints_from_ty (field->get_field_type (),
@@ -324,6 +322,8 @@ GenericTyPerCrateCtx::query_generic_variance (const ADTType &type)
   auto num_types = type.get_num_type_params ();
 
   std::vector<Variance> result;
+  result.reserve (num_lifetimes + num_types);
+
   for (size_t i = 0; i < num_lifetimes + num_types; ++i)
     {
       result.push_back (solutions[solution_index.value () + i]);
@@ -332,7 +332,7 @@ GenericTyPerCrateCtx::query_generic_variance (const ADTType &type)
   return result;
 }
 
-std::vector<size_t>
+FreeRegions
 GenericTyPerCrateCtx::query_field_regions (const ADTType *parent,
 					   size_t variant_index,
 					   size_t field_index,
@@ -413,7 +413,7 @@ GenericTyVisitorCtx::add_constraint (SolutionIndex index, Term term)
     }
   else
     {
-      ctx.constraints.push_back ({index, new Term (term)});
+      ctx.constraints.emplace_back (index, new Term (term));
     }
 }
 
@@ -537,7 +537,7 @@ TyVisitorCtx::add_constraints_from_generic_args (HirId ref,
     }
 }
 
-std::vector<size_t>
+FreeRegions
 FieldVisitorCtx::collect_regions (BaseType &ty)
 {
   // Segment the regions into ranges for each type parameter. Type parameter

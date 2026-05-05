@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -16,34 +16,36 @@
 // along with GCC; see the file COPYING3.  If not see
 // <http://www.gnu.org/licenses/>.
 
+#include "rust-hir-expr.h"
 #include "rust-hir-type-check-type.h"
 #include "rust-hir-type-check-expr.h"
 #include "rust-hir-type-check-enumitem.h"
 #include "rust-type-util.h"
+#include "rust-immutable-name-resolution-context.h"
 
 namespace Rust {
 namespace Resolver {
 
 TyTy::VariantDef *
-TypeCheckEnumItem::Resolve (HIR::EnumItem *item, int64_t last_discriminant)
+TypeCheckEnumItem::Resolve (HIR::EnumItem &item, int64_t last_discriminant)
 {
   TypeCheckEnumItem resolver (last_discriminant);
-  switch (item->get_enum_item_kind ())
+  switch (item.get_enum_item_kind ())
     {
     case HIR::EnumItem::EnumItemKind::Named:
-      resolver.visit (static_cast<HIR::EnumItem &> (*item));
+      resolver.visit (static_cast<HIR::EnumItem &> (item));
       break;
 
     case HIR::EnumItem::EnumItemKind::Tuple:
-      resolver.visit (static_cast<HIR::EnumItemTuple &> (*item));
+      resolver.visit (static_cast<HIR::EnumItemTuple &> (item));
       break;
 
     case HIR::EnumItem::EnumItemKind::Struct:
-      resolver.visit (static_cast<HIR::EnumItemStruct &> (*item));
+      resolver.visit (static_cast<HIR::EnumItemStruct &> (item));
       break;
 
     case HIR::EnumItem::EnumItemKind::Discriminant:
-      resolver.visit (static_cast<HIR::EnumItemDiscriminant &> (*item));
+      resolver.visit (static_cast<HIR::EnumItemDiscriminant &> (item));
       break;
     }
   return resolver.variant;
@@ -61,30 +63,30 @@ TypeCheckEnumItem::visit (HIR::EnumItem &item)
 
   Analysis::NodeMapping mapping (item.get_mappings ().get_crate_num (),
 				 item.get_mappings ().get_nodeid (),
-				 mappings->get_next_hir_id (
+				 mappings.get_next_hir_id (
 				   item.get_mappings ().get_crate_num ()),
 				 item.get_mappings ().get_local_defid ());
-  HIR::LiteralExpr *discim_expr
-    = new HIR::LiteralExpr (mapping, std::to_string (last_discriminant),
-			    HIR::Literal::LitType::INT,
-			    PrimitiveCoreType::CORETYPE_I64, item.get_locus (),
-			    {});
+  auto discim_expr = std::make_unique<HIR::LiteralExpr> (
+    HIR::LiteralExpr (mapping, std::to_string (last_discriminant),
+		      HIR::Literal::LitType::INT,
+		      PrimitiveCoreType::CORETYPE_I64, item.get_locus (), {}));
 
   TyTy::BaseType *isize = nullptr;
   bool ok = context->lookup_builtin ("isize", &isize);
   rust_assert (ok);
   context->insert_type (mapping, isize);
 
-  const CanonicalPath *canonical_path = nullptr;
-  ok = mappings->lookup_canonical_path (item.get_mappings ().get_nodeid (),
-					&canonical_path);
-  rust_assert (ok);
+  auto &nr_ctx
+    = Resolver2_0::ImmutableNameResolutionContext::get ().resolver ();
 
-  RustIdent ident{*canonical_path, item.get_locus ()};
+  CanonicalPath canonical_path
+    = nr_ctx.to_canonical_path (item.get_mappings ().get_nodeid ());
+
+  RustIdent ident{canonical_path, item.get_locus ()};
   variant = new TyTy::VariantDef (item.get_mappings ().get_hirid (),
 				  item.get_mappings ().get_defid (),
 				  item.get_identifier ().as_string (), ident,
-				  discim_expr);
+				  std::move (discim_expr));
 }
 
 void
@@ -94,28 +96,30 @@ TypeCheckEnumItem::visit (HIR::EnumItemDiscriminant &item)
     rust_error_at (item.get_locus (), "discriminant too big");
 
   auto &discriminant = item.get_discriminant_expression ();
-  auto capacity_type = TypeCheckExpr::Resolve (discriminant.get ());
+  auto capacity_type = TypeCheckExpr::Resolve (discriminant);
   if (capacity_type->get_kind () == TyTy::TypeKind::ERROR)
     return;
 
   TyTy::ISizeType *expected_ty
-    = new TyTy::ISizeType (discriminant->get_mappings ().get_hirid ());
-  context->insert_type (discriminant->get_mappings (), expected_ty);
+    = new TyTy::ISizeType (discriminant.get_mappings ().get_hirid ());
+  context->insert_type (discriminant.get_mappings (), expected_ty);
 
   unify_site (item.get_mappings ().get_hirid (),
 	      TyTy::TyWithLocation (expected_ty),
 	      TyTy::TyWithLocation (capacity_type), item.get_locus ());
 
-  const CanonicalPath *canonical_path = nullptr;
-  bool ok = mappings->lookup_canonical_path (item.get_mappings ().get_nodeid (),
-					     &canonical_path);
-  rust_assert (ok);
+  auto &nr_ctx
+    = Resolver2_0::ImmutableNameResolutionContext::get ().resolver ();
 
-  RustIdent ident{*canonical_path, item.get_locus ()};
-  variant = new TyTy::VariantDef (item.get_mappings ().get_hirid (),
-				  item.get_mappings ().get_defid (),
-				  item.get_identifier ().as_string (), ident,
-				  item.get_discriminant_expression ().get ());
+  CanonicalPath canonical_path
+    = nr_ctx.to_canonical_path (item.get_mappings ().get_nodeid ());
+
+  RustIdent ident{canonical_path, item.get_locus ()};
+  variant
+    = new TyTy::VariantDef (item.get_mappings ().get_hirid (),
+			    item.get_mappings ().get_defid (),
+			    item.get_identifier ().as_string (), ident,
+			    item.get_discriminant_expression ().clone_expr ());
 }
 
 void
@@ -129,7 +133,7 @@ TypeCheckEnumItem::visit (HIR::EnumItemTuple &item)
   for (auto &field : item.get_tuple_fields ())
     {
       TyTy::BaseType *field_type
-	= TypeCheckType::Resolve (field.get_field_type ().get ());
+	= TypeCheckType::Resolve (field.get_field_type ());
       TyTy::StructFieldType *ty_field
 	= new TyTy::StructFieldType (field.get_mappings ().get_hirid (),
 				     std::to_string (idx), field_type,
@@ -141,31 +145,31 @@ TypeCheckEnumItem::visit (HIR::EnumItemTuple &item)
 
   Analysis::NodeMapping mapping (item.get_mappings ().get_crate_num (),
 				 item.get_mappings ().get_nodeid (),
-				 mappings->get_next_hir_id (
+				 mappings.get_next_hir_id (
 				   item.get_mappings ().get_crate_num ()),
 				 item.get_mappings ().get_local_defid ());
-  HIR::LiteralExpr *discim_expr
-    = new HIR::LiteralExpr (mapping, std::to_string (last_discriminant),
-			    HIR::Literal::LitType::INT,
-			    PrimitiveCoreType::CORETYPE_I64, item.get_locus (),
-			    {});
+  auto discim_expr = std::make_unique<HIR::LiteralExpr> (
+    HIR::LiteralExpr (mapping, std::to_string (last_discriminant),
+		      HIR::Literal::LitType::INT,
+		      PrimitiveCoreType::CORETYPE_I64, item.get_locus (), {}));
 
   TyTy::BaseType *isize = nullptr;
   bool ok = context->lookup_builtin ("isize", &isize);
   rust_assert (ok);
   context->insert_type (mapping, isize);
 
-  const CanonicalPath *canonical_path = nullptr;
-  ok = mappings->lookup_canonical_path (item.get_mappings ().get_nodeid (),
-					&canonical_path);
-  rust_assert (ok);
+  auto &nr_ctx
+    = Resolver2_0::ImmutableNameResolutionContext::get ().resolver ();
 
-  RustIdent ident{*canonical_path, item.get_locus ()};
+  CanonicalPath canonical_path
+    = nr_ctx.to_canonical_path (item.get_mappings ().get_nodeid ());
+
+  RustIdent ident{canonical_path, item.get_locus ()};
   variant = new TyTy::VariantDef (item.get_mappings ().get_hirid (),
 				  item.get_mappings ().get_defid (),
 				  item.get_identifier ().as_string (), ident,
 				  TyTy::VariantDef::VariantType::TUPLE,
-				  discim_expr, fields);
+				  std::move (discim_expr), fields);
 }
 
 void
@@ -178,7 +182,7 @@ TypeCheckEnumItem::visit (HIR::EnumItemStruct &item)
   for (auto &field : item.get_struct_fields ())
     {
       TyTy::BaseType *field_type
-	= TypeCheckType::Resolve (field.get_field_type ().get ());
+	= TypeCheckType::Resolve (field.get_field_type ());
       TyTy::StructFieldType *ty_field
 	= new TyTy::StructFieldType (field.get_mappings ().get_hirid (),
 				     field.get_field_name ().as_string (),
@@ -189,31 +193,31 @@ TypeCheckEnumItem::visit (HIR::EnumItemStruct &item)
 
   Analysis::NodeMapping mapping (item.get_mappings ().get_crate_num (),
 				 item.get_mappings ().get_nodeid (),
-				 mappings->get_next_hir_id (
+				 mappings.get_next_hir_id (
 				   item.get_mappings ().get_crate_num ()),
 				 item.get_mappings ().get_local_defid ());
-  HIR::LiteralExpr *discrim_expr
-    = new HIR::LiteralExpr (mapping, std::to_string (last_discriminant),
-			    HIR::Literal::LitType::INT,
-			    PrimitiveCoreType::CORETYPE_I64, item.get_locus (),
-			    {});
+  auto discrim_expr = std::make_unique<HIR::LiteralExpr> (
+    HIR::LiteralExpr (mapping, std::to_string (last_discriminant),
+		      HIR::Literal::LitType::INT,
+		      PrimitiveCoreType::CORETYPE_I64, item.get_locus (), {}));
 
   TyTy::BaseType *isize = nullptr;
   bool ok = context->lookup_builtin ("isize", &isize);
   rust_assert (ok);
   context->insert_type (mapping, isize);
 
-  const CanonicalPath *canonical_path = nullptr;
-  ok = mappings->lookup_canonical_path (item.get_mappings ().get_nodeid (),
-					&canonical_path);
-  rust_assert (ok);
+  auto &nr_ctx
+    = Resolver2_0::ImmutableNameResolutionContext::get ().resolver ();
 
-  RustIdent ident{*canonical_path, item.get_locus ()};
+  CanonicalPath canonical_path
+    = nr_ctx.to_canonical_path (item.get_mappings ().get_nodeid ());
+
+  RustIdent ident{canonical_path, item.get_locus ()};
   variant = new TyTy::VariantDef (item.get_mappings ().get_hirid (),
 				  item.get_mappings ().get_defid (),
 				  item.get_identifier ().as_string (), ident,
 				  TyTy::VariantDef::VariantType::STRUCT,
-				  discrim_expr, fields);
+				  std::move (discrim_expr), fields);
 }
 
 } // namespace Resolver

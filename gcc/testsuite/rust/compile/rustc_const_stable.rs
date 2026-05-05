@@ -1,2 +1,7 @@
+#![feature(no_core)]
+#![no_core]
+
+#![feature(rustc_attrs)]
+
 #[rustc_const_stable(feature = "const_ascii_ctype_on_intrinsics", since = "1.47.0")]
-pub fn foo() {} // { dg-error "macro not found" "" { target *-*-* } .-1 }
+pub fn foo() {}

@@ -1,6 +1,6 @@
 /* m2statement.cc provides an interface to GCC statement trees.
 
-Copyright (C) 2012-2025 Free Software Foundation, Inc.
+Copyright (C) 2012-2026 Free Software Foundation, Inc.
 Contributed by Gaius Mulley <gaius@glam.ac.uk>.
 
 This file is part of GNU Modula-2.
@@ -36,6 +36,7 @@ along with GNU Modula-2; see the file COPYING3.  If not see
 #include "m2treelib.h"
 #include "m2type.h"
 #include "m2convert.h"
+#include "m2builtins.h"
 #include "m2pp.h"
 
 static GTY (()) tree param_list = NULL_TREE; /* Ready for the next time we
@@ -43,7 +44,7 @@ static GTY (()) tree param_list = NULL_TREE; /* Ready for the next time we
 static GTY (()) tree last_function = NULL_TREE;
 
 
-/* BuildStartFunctionCode - generate function entry code.  */
+/* BuildStartFunctionCode generate function entry code.  */
 
 void
 m2statement_BuildStartFunctionCode (location_t location, tree fndecl,
@@ -85,7 +86,7 @@ m2statement_BuildStartFunctionCode (location_t location, tree fndecl,
   DECL_DECLARED_INLINE_P (fndecl) = 0; /* isinline;  */
 }
 
-/* BuildEndFunctionCode - generates the function epilogue.  */
+/* BuildEndFunctionCode generates the function epilogue.  */
 
 void
 m2statement_BuildEndFunctionCode (location_t location, tree fndecl, bool nested)
@@ -122,7 +123,7 @@ m2statement_BuildEndFunctionCode (location_t location, tree fndecl, bool nested)
   current_function_decl = NULL;
 }
 
-/* BuildPushFunctionContext - pushes the current function context.
+/* BuildPushFunctionContext pushes the current function context.
    Maps onto push_function_context in ../function.cc.  */
 
 void
@@ -131,7 +132,7 @@ m2statement_BuildPushFunctionContext (void)
   push_function_context ();
 }
 
-/* BuildPopFunctionContext - pops the current function context.  Maps
+/* BuildPopFunctionContext pops the current function context.  Maps
    onto pop_function_context in ../function.cc.  */
 
 void
@@ -154,10 +155,125 @@ m2statement_SetEndLocation (location_t location)
     cfun->function_end_locus = location;
 }
 
-/* BuildAssignmentTree builds the assignment of, des, and, expr.
-   It returns, des.  */
+/* copy_record_fields copy each record field from right to left.  */
 
-tree
+static
+void
+copy_record_fields (location_t location, tree left, tree right)
+{
+  unsigned int i;
+  tree right_value;
+  tree left_type = TREE_TYPE (left);
+  vec<constructor_elt, va_gc> *values = CONSTRUCTOR_ELTS (right);
+  FOR_EACH_CONSTRUCTOR_VALUE (values, i, right_value)
+    {
+      tree left_field = m2treelib_get_field_no (left_type, NULL_TREE, false, i);
+      tree left_ref = m2expr_BuildComponentRef (location, left, left_field);
+      m2statement_CopyByField (location, left_ref, right_value);
+    }
+}
+
+/* copy_array copy each element of an array from array right to array left.  */
+
+static
+void
+copy_array (location_t location, tree left, tree right)
+{
+  unsigned int i;
+  tree value;
+  vec<constructor_elt, va_gc> *values = CONSTRUCTOR_ELTS (right);
+  tree array_type = TREE_TYPE (left);
+  tree index_type = TYPE_DOMAIN (array_type);
+  tree elt_type = TREE_TYPE (array_type);
+  tree low_indice = TYPE_MIN_VALUE (index_type);
+  low_indice
+      = m2convert_BuildConvert (location, index_type, low_indice, false);
+  FOR_EACH_CONSTRUCTOR_VALUE (values, i, value)
+    {
+      tree idx = m2decl_BuildIntegerConstant (i);
+      idx = m2convert_BuildConvert (location, index_type, idx, false);
+      tree array_ref = build4_loc (location, ARRAY_REF, elt_type, left,
+				   idx, low_indice, NULL_TREE);
+      m2statement_CopyByField (location, array_ref, value);
+    }
+}
+
+/* copy_array cst into left using strncpy.  */
+
+static
+void
+copy_strncpy (location_t location, tree left, tree cst)
+{
+  tree result = m2builtins_BuiltinStrNCopy (location,
+					    m2expr_BuildAddr (location, left, false),
+					    m2expr_BuildAddr (location, cst, false),
+					    m2decl_BuildIntegerConstant (m2expr_StringLength (cst)));
+  TREE_SIDE_EFFECTS (result) = true;
+  TREE_USED (left) = true;
+  TREE_USED (cst) = true;
+  add_stmt (location, result);
+}
+
+/* CopyMemcpy copy bytes from src into dest using builtin_memcpy.  */
+
+void
+m2statement_CopyMemcpy (location_t location, tree dest, tree src, tree bytes)
+{
+  tree addr_dest = m2expr_BuildAddr (location, dest, false);
+  tree result = m2builtins_BuiltinMemCopy (location,
+					   addr_dest,
+					   m2expr_BuildAddr (location, src, false),
+					   bytes);
+  TREE_SIDE_EFFECTS (result) = true;
+  TREE_USED (dest) = true;
+  TREE_USED (src) = true;
+  add_stmt (location, result);
+}
+
+/* CopyByField_Lower copy right to left using memcpy for unions,
+   strncpy for string cst, field assignment for records,
+   array element assignment for array constructors.  For all
+   other types it uses BuildAssignmentStatement.  */
+
+static
+void
+CopyByField_Lower (location_t location,
+		   tree left, tree right)
+{
+  tree left_type = TREE_TYPE (left);
+  enum tree_code right_code = TREE_CODE (right);
+  enum tree_code left_code = TREE_CODE (left_type);
+
+  if (left_code == RECORD_TYPE && right_code == CONSTRUCTOR)
+    copy_record_fields (location, left, right);
+  else if (left_code == ARRAY_TYPE && right_code == CONSTRUCTOR)
+    copy_array (location, left, right);
+  else if (left_code == UNION_TYPE && right_code == CONSTRUCTOR)
+    m2statement_CopyMemcpy (location, left, right,
+			    m2expr_GetSizeOf (location, left));
+  else if (right_code == STRING_CST)
+    copy_strncpy (location, left, right);
+  else
+    m2statement_BuildAssignmentStatement (location, left, right);
+}
+
+/* CopyByField recursively checks each field to ensure GCC
+   type equivalence and if so it uses assignment.
+   Otherwise use strncpy or memcpy depending upon type.  */
+
+void
+m2statement_CopyByField (location_t location, tree des, tree expr)
+{
+  if (m2type_IsGccStrictTypeEquivalent (des, expr))
+    m2statement_BuildAssignmentStatement (location, des, expr);
+  else
+    CopyByField_Lower (location, des, expr);
+}
+
+/* BuildAssignmentTree builds the assignment of des and expr.
+   It returns des.  */
+
+void
 m2statement_BuildAssignmentTree (location_t location, tree des, tree expr)
 {
   tree result;
@@ -171,7 +287,15 @@ m2statement_BuildAssignmentTree (location_t location, tree des, tree expr)
   else
     {
       gcc_assert (TREE_CODE (TREE_TYPE (des)) != TYPE_DECL);
-      if (TREE_TYPE (expr) == TREE_TYPE (des))
+      if ((TREE_CODE (expr) == CONSTRUCTOR)
+	  && (TREE_CODE (TREE_TYPE (des)) == ARRAY_TYPE))
+	{
+	  m2statement_CopyMemcpy (location, des, expr,
+				  m2expr_GetSizeOf (location,
+						    m2type_GetTreeType (des)));
+	  return;
+	}
+      else if (TREE_TYPE (expr) == TREE_TYPE (des))
         result = build2 (MODIFY_EXPR, TREE_TYPE (des), des, expr);
       else
         result = build2 (
@@ -183,10 +307,9 @@ m2statement_BuildAssignmentTree (location_t location, tree des, tree expr)
   TREE_USED (des) = true;
   TREE_USED (expr) = true;
   add_stmt (location, result);
-  return des;
 }
 
-/* BuildAssignmentStatement builds the assignment of, des, and, expr.  */
+/* BuildAssignmentStatement builds the assignment of des and expr.  */
 
 void
 m2statement_BuildAssignmentStatement (location_t location, tree des, tree expr)
@@ -206,7 +329,7 @@ m2statement_BuildGoto (location_t location, char *name)
   add_stmt (location, build1 (GOTO_EXPR, void_type_node, label));
 }
 
-/* DeclareLabel - create a label, name.  */
+/* DeclareLabel create a label, name.  */
 
 void
 m2statement_DeclareLabel (location_t location, char *name)
@@ -217,7 +340,7 @@ m2statement_DeclareLabel (location_t location, char *name)
   add_stmt (location, build1 (LABEL_EXPR, void_type_node, label));
 }
 
-/* BuildParam - build a list of parameters, ready for a subsequent
+/* BuildParam build a list of parameters, ready for a subsequent
    procedure call.  */
 
 void
@@ -232,7 +355,7 @@ m2statement_BuildParam (location_t location, tree param)
   param_list = chainon (build_tree_list (NULL_TREE, param), param_list);
 }
 
-/* nCount - return the number of chained tree nodes in list, t.  */
+/* nCount return the number of chained tree nodes in list, t.  */
 
 static int
 nCount (tree t)
@@ -247,7 +370,7 @@ nCount (tree t)
   return i;
 }
 
-/* BuildProcedureCallTree - creates a procedure call from a procedure
+/* BuildProcedureCallTree creates a procedure call from a procedure
    and parameter list and the return type, rettype.  */
 
 tree
@@ -304,7 +427,7 @@ m2statement_BuildProcedureCallTree (location_t location, tree procedure,
     }
 }
 
-/* BuildIndirectProcedureCallTree - creates a procedure call from a
+/* BuildIndirectProcedureCallTree creates a procedure call from a
    procedure and parameter list and the return type, rettype.  */
 
 tree
@@ -371,8 +494,8 @@ m2statement_BuildBuiltinCallTree (tree func)
 }
 
 
-/* BuildFunctValue - generates code for value :=
-   last_function(foobar); */
+/* BuildFunctValue generates code for
+   value := last_function (foobar).  */
 
 tree
 m2statement_BuildFunctValue (location_t location, tree value)
@@ -390,10 +513,9 @@ m2statement_BuildFunctValue (location_t location, tree value)
   TREE_USED (value) = true;
   last_function = NULL_TREE;
   return assign;
-  // return m2statement_BuildAssignmentTree (location, value, assign);
 }
 
-/* BuildCall2 - builds a tree representing: function (arg1, arg2).  */
+/* BuildCall2 builds a tree representing: function (arg1, arg2).  */
 
 tree
 m2statement_BuildCall2 (location_t location, tree function, tree rettype,
@@ -407,8 +529,7 @@ m2statement_BuildCall2 (location_t location, tree function, tree rettype,
   return m2statement_BuildProcedureCallTree (location, function, rettype);
 }
 
-/* BuildCall3 - builds a tree representing: function (arg1, arg2,
-   arg3).  */
+/* BuildCall3 builds a tree representing: function (arg1, arg2, arg3).  */
 
 tree
 m2statement_BuildCall3 (location_t location, tree function, tree rettype,
@@ -423,7 +544,7 @@ m2statement_BuildCall3 (location_t location, tree function, tree rettype,
   return m2statement_BuildProcedureCallTree (location, function, rettype);
 }
 
-/* BuildFunctionCallTree - creates a procedure function call from
+/* BuildFunctionCallTree creates a procedure function call from
    a procedure and parameter list and the return type, rettype.
    No tree is returned as the tree is held in the last_function global
    variable.  It is expected the BuildFunctValue is to be called after
@@ -436,7 +557,7 @@ m2statement_BuildFunctionCallTree (location_t location, tree procedure,
   m2statement_BuildProcedureCallTree (location, procedure, rettype);
 }
 
-/* SetLastFunction - assigns last_function to, t.  */
+/* SetLastFunction assigns last_function to, t.  */
 
 void
 m2statement_SetLastFunction (tree t)
@@ -444,7 +565,7 @@ m2statement_SetLastFunction (tree t)
   last_function = t;
 }
 
-/* SetParamList - assigns param_list to, t.  */
+/* SetParamList assigns param_list to, t.  */
 
 void
 m2statement_SetParamList (tree t)
@@ -452,7 +573,7 @@ m2statement_SetParamList (tree t)
   param_list = t;
 }
 
-/* GetLastFunction - returns, last_function.  */
+/* GetLastFunction returns, last_function.  */
 
 tree
 m2statement_GetLastFunction (void)
@@ -460,7 +581,7 @@ m2statement_GetLastFunction (void)
   return last_function;
 }
 
-/* GetParamList - returns, param_list.  */
+/* GetParamList returns, param_list.  */
 
 tree
 m2statement_GetParamList (void)
@@ -468,7 +589,7 @@ m2statement_GetParamList (void)
   return param_list;
 }
 
-/* GetCurrentFunction - returns the current_function.  */
+/* GetCurrentFunction returns the current_function.  */
 
 tree
 m2statement_GetCurrentFunction (void)
@@ -476,7 +597,7 @@ m2statement_GetCurrentFunction (void)
   return current_function_decl;
 }
 
-/* GetParamTree - return parameter, i.  */
+/* GetParamTree return parameter, i.  */
 
 tree
 m2statement_GetParamTree (tree call, unsigned int i)
@@ -484,7 +605,7 @@ m2statement_GetParamTree (tree call, unsigned int i)
   return CALL_EXPR_ARG (call, i);
 }
 
-/* BuildTryFinally - returns a TRY_FINALL_EXPR with the call and
+/* BuildTryFinally returns a TRY_FINALL_EXPR with the call and
    cleanups attached.  */
 
 tree
@@ -493,7 +614,7 @@ m2statement_BuildTryFinally (location_t location, tree call, tree cleanups)
   return build_stmt (location, TRY_FINALLY_EXPR, call, cleanups);
 }
 
-/* BuildCleanUp - return a CLEANUP_POINT_EXPR which will clobber,
+/* BuildCleanUp return a CLEANUP_POINT_EXPR which will clobber,
    param.  */
 
 tree
@@ -504,7 +625,7 @@ m2statement_BuildCleanUp (tree param)
   return build2 (MODIFY_EXPR, TREE_TYPE (param), param, clobber);
 }
 
-/* BuildAsm - generates an inline assembler instruction.  */
+/* BuildAsm generates an inline assembler instruction.  */
 
 void
 m2statement_BuildAsm (location_t location, tree instr, bool isVolatile,
@@ -525,298 +646,7 @@ m2statement_BuildAsm (location_t location, tree instr, bool isVolatile,
   add_stmt (location, args);
 }
 
-/* BuildUnaryForeachWordDo - provides the large set operators.  Each
-   word (or less) of the set can be calculated by unop.  This
-   procedure runs along each word of the large set invoking the unop.  */
-
-void
-m2statement_BuildUnaryForeachWordDo (location_t location, tree type, tree op1,
-                                     tree op2,
-                                     tree (*unop) (location_t, tree, bool),
-                                     bool is_op1lvalue, bool is_op2lvalue,
-                                     bool is_op1const, bool is_op2const)
-{
-  tree size = m2expr_GetSizeOf (location, type);
-
-  m2assert_AssertLocation (location);
-  ASSERT_BOOL (is_op1lvalue);
-  ASSERT_BOOL (is_op2lvalue);
-  ASSERT_BOOL (is_op1const);
-  ASSERT_BOOL (is_op2const);
-  if (m2expr_CompareTrees (
-          size, m2decl_BuildIntegerConstant (SET_WORD_SIZE / BITS_PER_UNIT))
-      <= 0)
-    /* Small set size <= TSIZE(WORD).  */
-    m2statement_BuildAssignmentTree (
-        location, m2treelib_get_rvalue (location, op1, type, is_op1lvalue),
-        (*unop) (location,
-                 m2treelib_get_rvalue (location, op2, type, is_op2lvalue),
-                 false));
-  else
-    {
-      /* Large set size > TSIZE(WORD).  */
-      unsigned int fieldNo = 0;
-      tree field1 = m2treelib_get_field_no (type, op1, is_op1const, fieldNo);
-      tree field2 = m2treelib_get_field_no (type, op2, is_op2const, fieldNo);
-
-      if (is_op1const)
-        error ("internal error: not expecting operand1 to be a constant set");
-
-      while (field1 != NULL && field2 != NULL)
-        {
-          m2statement_BuildAssignmentTree (
-              location, m2treelib_get_set_field_des (location, op1, field1),
-              (*unop) (location,
-                       m2treelib_get_set_field_rhs (location, op2, field2),
-                       false));
-          fieldNo++;
-          field1 = m2treelib_get_field_no (type, op1, is_op1const, fieldNo);
-          field2 = m2treelib_get_field_no (type, op2, is_op2const, fieldNo);
-        }
-    }
-}
-
-/* BuildExcludeVarConst - builds the EXCL(op1, 1<<op2) operation for
-   a small sets.  Large sets call this routine to exclude the bit in
-   the particular word.  op2 is a constant.  */
-
-void
-m2statement_BuildExcludeVarConst (location_t location, tree type, tree op1,
-                                  tree op2, bool is_lvalue, int fieldno)
-{
-  tree size = m2expr_GetSizeOf (location, type);
-
-  m2assert_AssertLocation (location);
-  ASSERT_BOOL (is_lvalue);
-  if (m2expr_CompareTrees (
-          size, m2decl_BuildIntegerConstant (SET_WORD_SIZE / BITS_PER_UNIT))
-      <= 0)
-    {
-      /* Small set size <= TSIZE(WORD).  */
-      m2statement_BuildAssignmentTree (
-          location, m2treelib_get_rvalue (location, op1, type, is_lvalue),
-          m2expr_BuildLogicalAnd (
-              location, m2treelib_get_rvalue (location, op1, type, is_lvalue),
-              m2expr_BuildSetNegate (
-                  location,
-                  m2expr_BuildLSL (location, m2expr_GetWordOne (location), op2,
-                                   false),
-                  false),
-              false));
-    }
-  else
-    {
-      tree fieldlist = TYPE_FIELDS (type);
-      tree field;
-
-      for (field = fieldlist; (field != NULL) && (fieldno > 0);
-           field = TREE_CHAIN (field))
-        fieldno--;
-
-      m2statement_BuildAssignmentTree (
-          location, m2treelib_get_set_field_des (location, op1, field),
-          m2expr_BuildLogicalAnd (
-              location, m2treelib_get_set_field_rhs (location, op1, field),
-              m2expr_BuildSetNegate (
-                  location,
-                  m2expr_BuildLSL (location, m2expr_GetWordOne (location), op2,
-                                   false),
-                  false),
-              false));
-    }
-}
-
-/* BuildExcludeVarVar - builds the EXCL(varset, 1<<varel) operation
-   for a small and large sets.  varel is a variable.  */
-
-void
-m2statement_BuildExcludeVarVar (location_t location, tree type, tree varset,
-                                tree varel, bool is_lvalue, tree low)
-{
-  tree size = m2expr_GetSizeOf (location, type);
-
-  m2assert_AssertLocation (location);
-  ASSERT_BOOL (is_lvalue);
-  /* Calculate the index from the first bit, ie bit 0 represents low value.  */
-  tree index
-      = m2expr_BuildSub (location, m2convert_ToInteger (location, varel),
-                         m2convert_ToInteger (location, low), false);
-
-  if (m2expr_CompareTrees (
-          size, m2decl_BuildIntegerConstant (SET_WORD_SIZE / BITS_PER_UNIT))
-      <= 0)
-    /* Small set size <= TSIZE(WORD).  */
-    m2statement_BuildAssignmentTree (
-        location, m2treelib_get_rvalue (location, varset, type, is_lvalue),
-        m2expr_BuildLogicalAnd (
-            location, m2treelib_get_rvalue (location, varset, type, is_lvalue),
-            m2expr_BuildSetNegate (
-                location,
-                m2expr_BuildLSL (location, m2expr_GetWordOne (location),
-                                 m2convert_ToWord (location, index), false),
-                false),
-            false));
-  else
-    {
-      tree p1 = m2treelib_get_set_address (location, varset, is_lvalue);
-      /* Calculate the index from the first bit.  */
-
-      /* Which word do we need to fetch?  */
-      tree word_index = m2expr_BuildDivTrunc (
-          location, index, m2decl_BuildIntegerConstant (SET_WORD_SIZE), false);
-      /* Calculate the bit in this word.  */
-      tree offset_into_word = m2expr_BuildModTrunc (
-          location, index, m2decl_BuildIntegerConstant (SET_WORD_SIZE), false);
-
-      tree v1;
-
-      /* Calculate the address of the word we are interested in.  */
-      p1 = m2expr_BuildAddAddress (
-          location, m2convert_convertToPtr (location, p1),
-          m2expr_BuildMult (
-              location, word_index,
-              m2decl_BuildIntegerConstant (SET_WORD_SIZE / BITS_PER_UNIT),
-              false));
-
-      v1 = m2expr_BuildLogicalAnd (
-          location,
-          m2expr_BuildIndirect (location, p1, m2type_GetBitsetType ()),
-          m2expr_BuildSetNegate (
-              location,
-              m2expr_BuildLSL (location, m2expr_GetWordOne (location),
-                               m2convert_ToWord (location, offset_into_word),
-                               false),
-              false),
-          false);
-
-      /* Set bit offset_into_word within the word pointer at by p1.  */
-      m2statement_BuildAssignmentTree (
-          location,
-          m2expr_BuildIndirect (location, p1, m2type_GetBitsetType ()),
-          m2convert_ToBitset (location, v1));
-    }
-}
-
-/* BuildIncludeVarConst - builds the INCL(op1, 1<<op2) operation for
-   a small sets.  Large sets call this routine to include the bit in
-   the particular word.  op2 is a constant.  */
-
-void
-m2statement_BuildIncludeVarConst (location_t location, tree type, tree op1,
-                                  tree op2, bool is_lvalue, int fieldno)
-{
-  tree size = m2expr_GetSizeOf (location, type);
-
-  m2assert_AssertLocation (location);
-  ASSERT_BOOL (is_lvalue);
-  if (m2expr_CompareTrees (
-          size, m2decl_BuildIntegerConstant (SET_WORD_SIZE / BITS_PER_UNIT))
-      <= 0)
-    {
-      /* Small set size <= TSIZE(WORD).  */
-      m2statement_BuildAssignmentTree (
-          location, m2treelib_get_rvalue (location, op1, type, is_lvalue),
-          m2expr_BuildLogicalOr (
-              location, m2treelib_get_rvalue (location, op1, type, is_lvalue),
-              m2expr_BuildLSL (location, m2expr_GetWordOne (location),
-                               m2convert_ToWord (location, op2), false),
-              false));
-    }
-  else
-    {
-      tree fieldlist = TYPE_FIELDS (type);
-      tree field;
-
-      for (field = fieldlist; (field != NULL) && (fieldno > 0);
-           field = TREE_CHAIN (field))
-        fieldno--;
-
-      m2statement_BuildAssignmentTree (
-          location,
-          /* Would like to use: m2expr_BuildComponentRef (location, p, field)
-             but strangely we have to take the address of the field and
-             dereference it to satify the gimplifier.  See
-             testsuite/gm2/pim/pass/timeio?.mod for testcases.  */
-          m2treelib_get_set_field_des (location, op1, field),
-          m2expr_BuildLogicalOr (
-              location, m2treelib_get_set_field_rhs (location, op1, field),
-              m2expr_BuildLSL (location, m2expr_GetWordOne (location),
-                               m2convert_ToWord (location, op2), false),
-              false));
-    }
-}
-
-/* BuildIncludeVarVar - builds the INCL(varset, 1<<varel) operation
-   for a small and large sets.  op2 is a variable.  */
-
-void
-m2statement_BuildIncludeVarVar (location_t location, tree type, tree varset,
-                                tree varel, bool is_lvalue, tree low)
-{
-  tree size = m2expr_GetSizeOf (location, type);
-
-  m2assert_AssertLocation (location);
-  ASSERT_BOOL (is_lvalue);
-  /* Calculate the index from the first bit, ie bit 0 represents low value.  */
-  tree index
-      = m2expr_BuildSub (location, m2convert_ToInteger (location, varel),
-                         m2convert_ToInteger (location, low), false);
-  tree indexw = m2convert_ToWord (location, index);
-
-  if (m2expr_CompareTrees (
-          size, m2decl_BuildIntegerConstant (SET_WORD_SIZE / BITS_PER_UNIT))
-      <= 0)
-    /* Small set size <= TSIZE(WORD).  */
-    m2statement_BuildAssignmentTree (
-        location, m2treelib_get_rvalue (location, varset, type, is_lvalue),
-        m2convert_ToBitset (
-            location,
-            m2expr_BuildLogicalOr (
-                location,
-                m2treelib_get_rvalue (location, varset, type, is_lvalue),
-                m2expr_BuildLSL (location, m2expr_GetWordOne (location),
-                                 indexw, false),
-                false)));
-  else
-    {
-      tree p1 = m2treelib_get_set_address (location, varset, is_lvalue);
-      /* Which word do we need to fetch?  */
-      tree word_index = m2expr_BuildDivTrunc (
-          location, index, m2decl_BuildIntegerConstant (SET_WORD_SIZE), false);
-      /* Calculate the bit in this word.  */
-      tree offset_into_word = m2convert_BuildConvert (
-          location, m2type_GetWordType (),
-          m2expr_BuildModTrunc (location, index,
-                                m2decl_BuildIntegerConstant (SET_WORD_SIZE),
-                                false),
-          false);
-      tree v1;
-
-      /* Calculate the address of the word we are interested in.  */
-      p1 = m2expr_BuildAddAddress (
-          location, m2convert_convertToPtr (location, p1),
-          m2expr_BuildMult (
-              location, word_index,
-              m2decl_BuildIntegerConstant (SET_WORD_SIZE / BITS_PER_UNIT),
-              false));
-      v1 = m2expr_BuildLogicalOr (
-          location,
-          m2expr_BuildIndirect (location, p1, m2type_GetBitsetType ()),
-          m2convert_ToBitset (location,
-                              m2expr_BuildLSL (location,
-                                               m2expr_GetWordOne (location),
-                                               offset_into_word, false)),
-          false);
-
-      /* Set bit offset_into_word within the word pointer at by p1.  */
-      m2statement_BuildAssignmentTree (
-          location,
-          m2expr_BuildIndirect (location, p1, m2type_GetBitsetType ()),
-          m2convert_ToBitset (location, v1));
-    }
-}
-
-/* BuildStart - creates a module initialization function.  We make
+/* BuildStart creates a module initialization function.  We make
    this function public if it is not an inner module.  The linker
    will create a call list for all linked modules which determines
    the initialization sequence for all modules.  */
@@ -852,7 +682,7 @@ m2statement_BuildStart (location_t location, char *name, bool inner_module)
   return fndecl;
 }
 
-/* BuildEnd - complete the initialization function for this module.  */
+/* BuildEnd complete the initialization function for this module.  */
 
 void
 m2statement_BuildEnd (location_t location, tree fndecl, bool nested)
@@ -862,7 +692,7 @@ m2statement_BuildEnd (location_t location, tree fndecl, bool nested)
   set_cfun (NULL);
 }
 
-/* BuildCallInner - call the inner module function.  It has no
+/* BuildCallInner call the inner module function.  It has no
    parameters and no return value.  */
 
 void
@@ -875,7 +705,7 @@ m2statement_BuildCallInner (location_t location, tree fndecl)
 }
 
 
-/* BuildIfThenDoEnd - returns a tree which will only execute
+/* BuildIfThenDoEnd returns a tree which will only execute
    statement, s, if, condition, is true.  */
 
 tree
@@ -888,7 +718,7 @@ m2statement_BuildIfThenDoEnd (tree condition, tree then_block)
                         alloc_stmt_list ());
 }
 
-/* BuildIfThenElseEnd - returns a tree which will execute then_block
+/* BuildIfThenElseEnd returns a tree which will execute then_block
    or else_block depending upon, condition.  */
 
 tree
@@ -902,8 +732,8 @@ m2statement_BuildIfThenElseEnd (tree condition, tree then_block,
                         else_block);
 }
 
-/* BuildReturnValueCode - generates the code associated with: RETURN(
-   value ) */
+/* BuildReturnValueCode generates the code associated with:
+   RETURN ( value ).  */
 
 void
 m2statement_BuildReturnValueCode (location_t location, tree fndecl, tree value)
@@ -922,41 +752,45 @@ m2statement_BuildReturnValueCode (location_t location, tree fndecl, tree value)
   add_stmt (location, ret_stmt);
 }
 
-/* DoJump - jump to the appropriate label depending whether result of
-   the expression is true or false.  */
+/* IfExprJump if expr then jump to the label.  */
 
 void
-m2statement_DoJump (location_t location, tree exp, char *falselabel,
-                    char *truelabel)
+m2statement_IfExprJump (location_t location, tree exp, char *label)
 {
-  tree c = NULL_TREE;
+  tree if_jump;
 
   m2assert_AssertLocation (location);
   if (TREE_CODE (TREE_TYPE (exp)) != BOOLEAN_TYPE)
     exp = convert_loc (location, m2type_GetBooleanType (), exp);
 
-  if ((falselabel != NULL) && (truelabel == NULL))
-    {
-      m2block_push_statement_list (m2block_begin_statement_list ());
+  m2block_push_statement_list (m2block_begin_statement_list ());
+  m2statement_BuildGoto (location, label);
+  if_jump = build3 (COND_EXPR, void_type_node, exp,
+		    m2block_pop_statement_list (),
+		    alloc_stmt_list ());
+  add_stmt (location, if_jump);
+}
 
-      m2statement_BuildGoto (location, falselabel);
-      c = build3 (COND_EXPR, void_type_node, exp,
-                  m2block_pop_statement_list (),
-                  alloc_stmt_list ());
-    }
-  else if ((falselabel == NULL) && (truelabel != NULL))
-    {
-      m2block_push_statement_list (m2block_begin_statement_list ());
 
-      m2statement_BuildGoto (location, truelabel);
-      c = build3 (COND_EXPR, void_type_node, exp,
-                  m2block_pop_statement_list (),
-                  alloc_stmt_list ());
-    }
-  else
-    error_at (location, "expecting one and only one label to be declared");
-  if (c != NULL_TREE)
-    add_stmt (location, c);
+/* IfBitInSetJump if bit in set jump to label.  */
+
+void
+m2statement_IfBitInSetJump (location_t location, bool invertCondition,
+			    tree setvalue, tree bit, char *label)
+{
+  tree condition;
+
+  condition = m2expr_BuildNotEqualTo (location,
+				      m2expr_BuildLogicalAnd (location,
+							      m2expr_BuildLSL (location,
+									       m2expr_GetWordOne (location),
+									       bit, false),
+							      setvalue),
+				      m2expr_GetWordZero (location)) ;
+  if (invertCondition)
+    condition = m2expr_BuildEqualTo (location, condition,
+				     m2type_GetBooleanFalse ());
+  m2statement_IfExprJump (location, condition, label);
 }
 
 #include "gt-m2-m2statement.h"

@@ -1247,8 +1247,19 @@ private Pid spawnProcessPosix(scope const(char[])[] args,
     else
     {
         closePipeWriteEnds();
+
+        T retryInterrupted(T)(scope T delegate() syscall)
+        {
+            import core.stdc.errno : errno, EINTR;
+            T result;
+            do
+                result = syscall();
+            while (result == -1 && .errno == EINTR);
+            return result;
+        }
+
         auto status = InternalError.noerror;
-        auto readExecResult = core.sys.posix.unistd.read(forkPipe[0], &status, status.sizeof);
+        auto readExecResult = retryInterrupted(() => core.sys.posix.unistd.read(forkPipe[0], &status, status.sizeof));
         // Save error number just in case if subsequent "waitpid" fails and overrides errno
         immutable lastError = .errno;
 
@@ -1257,7 +1268,7 @@ private Pid spawnProcessPosix(scope const(char[])[] args,
             // Forked child exits right after creating second fork. So it should be safe to wait here.
             import core.sys.posix.sys.wait : waitpid;
             int waitResult;
-            waitpid(id, &waitResult, 0);
+            retryInterrupted(() => waitpid(id, &waitResult, 0));
         }
 
         if (readExecResult == -1)
@@ -1267,7 +1278,7 @@ private Pid spawnProcessPosix(scope const(char[])[] args,
         if (status != InternalError.noerror)
         {
             int error;
-            readExecResult = read(forkPipe[0], &error, error.sizeof);
+            readExecResult = retryInterrupted(() => read(forkPipe[0], &error, error.sizeof));
             string errorMsg;
             final switch (status)
             {
@@ -4315,14 +4326,14 @@ version (Posix)
     import core.sys.posix.stdlib;
 }
 
-private void toAStringz(in string[] a, const(char)**az)
+private const(char)** toAStringz(in string[] a)
 {
     import std.string : toStringz;
-    foreach (string s; a)
-    {
-        *az++ = toStringz(s);
-    }
-    *az = null;
+    auto p = (new const(char)*[1 + a.length]).ptr;
+    foreach (i, string s; a)
+        p[i] = toStringz(s);
+    p[a.length] = null;
+    return p;
 }
 
 
@@ -4452,45 +4463,17 @@ extern(C)
 
 private int execv_(in string pathname, in string[] argv)
 {
-    import core.exception : OutOfMemoryError;
-    import std.exception : enforce;
-    auto argv_ = cast(const(char)**)core.stdc.stdlib.malloc((char*).sizeof * (1 + argv.length));
-    enforce!OutOfMemoryError(argv_ !is null, "Out of memory in std.process.");
-    scope(exit) core.stdc.stdlib.free(argv_);
-
-    toAStringz(argv, argv_);
-
-    return execv(pathname.tempCString(), argv_);
+    return execv(pathname.tempCString(), toAStringz(argv));
 }
 
 private int execve_(in string pathname, in string[] argv, in string[] envp)
 {
-    import core.exception : OutOfMemoryError;
-    import std.exception : enforce;
-    auto argv_ = cast(const(char)**)core.stdc.stdlib.malloc((char*).sizeof * (1 + argv.length));
-    enforce!OutOfMemoryError(argv_ !is null, "Out of memory in std.process.");
-    scope(exit) core.stdc.stdlib.free(argv_);
-    auto envp_ = cast(const(char)**)core.stdc.stdlib.malloc((char*).sizeof * (1 + envp.length));
-    enforce!OutOfMemoryError(envp_ !is null, "Out of memory in std.process.");
-    scope(exit) core.stdc.stdlib.free(envp_);
-
-    toAStringz(argv, argv_);
-    toAStringz(envp, envp_);
-
-    return execve(pathname.tempCString(), argv_, envp_);
+    return execve(pathname.tempCString(), toAStringz(argv), toAStringz(envp));
 }
 
 private int execvp_(in string pathname, in string[] argv)
 {
-    import core.exception : OutOfMemoryError;
-    import std.exception : enforce;
-    auto argv_ = cast(const(char)**)core.stdc.stdlib.malloc((char*).sizeof * (1 + argv.length));
-    enforce!OutOfMemoryError(argv_ !is null, "Out of memory in std.process.");
-    scope(exit) core.stdc.stdlib.free(argv_);
-
-    toAStringz(argv, argv_);
-
-    return execvp(pathname.tempCString(), argv_);
+    return execvp(pathname.tempCString(), toAStringz(argv));
 }
 
 private int execvpe_(in string pathname, in string[] argv, in string[] envp)
@@ -4532,19 +4515,7 @@ version (Posix)
 }
 else version (Windows)
 {
-    import core.exception : OutOfMemoryError;
-    import std.exception : enforce;
-    auto argv_ = cast(const(char)**)core.stdc.stdlib.malloc((char*).sizeof * (1 + argv.length));
-    enforce!OutOfMemoryError(argv_ !is null, "Out of memory in std.process.");
-    scope(exit) core.stdc.stdlib.free(argv_);
-    auto envp_ = cast(const(char)**)core.stdc.stdlib.malloc((char*).sizeof * (1 + envp.length));
-    enforce!OutOfMemoryError(envp_ !is null, "Out of memory in std.process.");
-    scope(exit) core.stdc.stdlib.free(envp_);
-
-    toAStringz(argv, argv_);
-    toAStringz(envp, envp_);
-
-    return execvpe(pathname.tempCString(), argv_, envp_);
+    return execvpe(pathname.tempCString(), toAStringz(argv), toAStringz(envp));
 }
 else
 {

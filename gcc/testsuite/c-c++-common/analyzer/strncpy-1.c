@@ -7,7 +7,9 @@
 
 typedef __SIZE_TYPE__ size_t;
 
-extern char *strncpy (char *dst, const char *src, size_t count);
+extern char *
+strncpy (char *dst, const char *src, size_t count)
+  __attribute__ ((nonnull (1, 2)));
 
 char *
 test_passthrough (char *dst, const char *src, size_t count)
@@ -20,13 +22,13 @@ test_passthrough (char *dst, const char *src, size_t count)
 char *
 test_null_dst (const char *src, size_t count)
 {
-  return strncpy (NULL, src, count); /* { dg-warning "use of NULL where non-null expected" } */
+  return strncpy (NULL, src, 42); /* { dg-warning "use of NULL where non-null expected" } */
 }
 
 char *
 test_null_src (char *dst, size_t count)
 {
-  return strncpy (dst, NULL, count); /* { dg-warning "use of NULL where non-null expected" } */
+  return strncpy (dst, NULL, 42); /* { dg-warning "use of NULL where non-null expected" } */
 }
 
 void

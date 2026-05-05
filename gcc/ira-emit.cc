@@ -1,5 +1,5 @@
 /* Integrated Register Allocator.  Changing code and generating moves.
-   Copyright (C) 2006-2025 Free Software Foundation, Inc.
+   Copyright (C) 2006-2026 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -729,14 +729,6 @@ static move_t hard_regno_last_set[FIRST_PSEUDO_REGISTER];
    element in `hard_regno_last_set' is defined and correct.  */
 static int hard_regno_last_set_check[FIRST_PSEUDO_REGISTER];
 
-/* Last move (in move sequence being processed) setting up the
-   corresponding allocno.  */
-static move_t *allocno_last_set;
-
-/* If the element value is equal to CURR_TICK then the corresponding
-   element in . `allocno_last_set' is defined and correct.  */
-static int *allocno_last_set_check;
-
 /* Definition of vector of moves.  */
 
 /* This vec contains moves sorted topologically (depth-first) on their
@@ -744,8 +736,7 @@ static int *allocno_last_set_check;
 static vec<move_t> move_vec;
 
 /* The variable value is used to check correctness of values of
-   elements of arrays `hard_regno_last_set' and
-   `allocno_last_set_check'.  */
+   elements of arrays `hard_regno_last_set'.  */
 static int curr_tick;
 
 /* This recursive function traverses dependencies of MOVE and produces
@@ -925,8 +916,7 @@ emit_move_list (move_t list, int freq)
       from = allocno_emit_reg (list->from);
       from_regno = REGNO (from);
       emit_move_insn (to, from);
-      list->insn = get_insns ();
-      end_sequence ();
+      list->insn = end_sequence ();
       for (insn = list->insn; insn != NULL_RTX; insn = NEXT_INSN (insn))
 	{
 	  /* The reload needs to have set up insn codes.  If the
@@ -972,7 +962,7 @@ emit_move_list (move_t list, int freq)
 	{
 	  if (ALLOCNO_HARD_REGNO (list->to) >= 0)
 	    {
-	      cost = ira_memory_move_cost[mode][aclass][0] * freq;
+	      cost = ira_memory_move_cost[mode][aclass][1] * freq;
 	      ira_load_cost += cost;
 	    }
 	}
@@ -984,8 +974,7 @@ emit_move_list (move_t list, int freq)
 	}
       ira_overall_cost += cost;
     }
-  result = get_insns ();
-  end_sequence ();
+  result = end_sequence ();
   return result;
 }
 
@@ -1288,11 +1277,6 @@ ira_emit (bool loops_p)
 	if (e->dest != EXIT_BLOCK_PTR_FOR_FN (cfun))
 	  generate_edge_moves (e);
     }
-  allocno_last_set
-    = (move_t *) ira_allocate (sizeof (move_t) * max_reg_num ());
-  allocno_last_set_check
-    = (int *) ira_allocate (sizeof (int) * max_reg_num ());
-  memset (allocno_last_set_check, 0, sizeof (int) * max_reg_num ());
   memset (hard_regno_last_set_check, 0, sizeof (hard_regno_last_set_check));
   curr_tick = 0;
   FOR_EACH_BB_FN (bb, cfun)
@@ -1314,8 +1298,6 @@ ira_emit (bool loops_p)
 	}
     }
   move_vec.release ();
-  ira_free (allocno_last_set_check);
-  ira_free (allocno_last_set);
   commit_edge_insertions ();
   /* Fix insn codes.  It is necessary to do it before reload because
      reload assumes initial insn codes defined.  The insn codes can be

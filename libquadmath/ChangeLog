@@ -1,3 +1,42 @@
+2026-01-01  Jakub Jelinek  <jakub@redhat.com>
+
+	* libquadmath.texi: Bump @copying's copyright year.
+
+2025-12-29  Rainer Orth  <ro@CeBiTec.Uni-Bielefeld.DE>
+
+	* configure: Regenerate.
+
+2025-11-03  Sam James  <sam@gentoo.org>
+
+	* configure: Regenerate.
+
+2025-10-05  Sam James  <sam@gentoo.org>
+
+	* Makefile.in: Regenerate.
+	* aclocal.m4: Regenerate.
+	* configure: Regenerate.
+
+2025-04-09  Jakub Jelinek  <jakub@redhat.com>
+
+	* math/expq.c (C): Fix up THREEp96 constant.
+
+2025-04-07  Lulu Cheng  <chenglulu@loongson.cn>
+
+	PR target/119408
+	* configure.ac: When checking for __float128 support, determine
+	whether the current architecture is LoongArch.  If so, return false.
+	* configure: Regenerate.
+	Sigend-off-by: Xi Ruoyao <xry111@xry111.site>
+	Sigend-off-by: Jakub Jelinek <jakub@redhat.com>
+
+2025-04-01  Jakub Jelinek  <jakub@redhat.com>
+
+	* strtod/strtod_l.c (____STRTOF_INTERNAL): Avoid old-style function
+	definitions.
+	* printf/addmul_1.c (mpn_addmul_1): Likewise.
+	* printf/mul_1.c (mpn_mul_1): Likewise.
+	* printf/submul_1.c (mpn_submul_1): Likewise.
+
 2025-01-02  Jakub Jelinek  <jakub@redhat.com>
 
 	* libquadmath.texi: Bump @copying's copyright year.
@@ -1339,7 +1378,7 @@
 	PR fortran/32049
 	Initial implementation and checkin.
 
-Copyright (C) 2010-2025 Free Software Foundation, Inc.
+Copyright (C) 2010-2026 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright

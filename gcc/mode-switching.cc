@@ -1,5 +1,5 @@
 /* CPU mode switching
-   Copyright (C) 1998-2025 Free Software Foundation, Inc.
+   Copyright (C) 1998-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -124,8 +124,7 @@ commit_mode_sets (struct edge_list *edge_list, int e, struct bb_info *info)
 
 	  targetm.mode_switching.emit (e, mode, cur_mode, live_at_edge);
 
-	  mode_set = get_insns ();
-	  end_sequence ();
+	  mode_set = end_sequence ();
 	  default_rtl_profile ();
 
 	  /* Do not bother to insert empty sequence.  */
@@ -1110,6 +1109,10 @@ optimize_mode_switching (void)
   bitmap_clear (jumping_blocks);
   for (j = n_entities - 1; j >= 0; j--)
     {
+      if (dump_file)
+	fprintf (dump_file,
+		 "Calculating mode switching transitions for entity %d:\n", j);
+
       int no_mode = num_modes[entity_map[j]];
       struct bb_info *info = bb_info[j];
 
@@ -1212,8 +1215,13 @@ optimize_mode_switching (void)
 
 		  targetm.mode_switching.emit (entity_map[j], ptr->mode,
 					       cur_mode, ptr->regs_live);
-		  mode_set = get_insns ();
-		  end_sequence ();
+		  mode_set = end_sequence ();
+
+		  if (dump_file)
+		    fprintf(dump_file,
+			    "Emitting transition %d --> %d at"
+			    " instruction %d.\n", cur_mode, ptr->mode,
+			    INSN_UID (ptr->insn_ptr));
 
 		  /* Insert MODE_SET only if it is nonempty.  */
 		  if (mode_set != NULL_RTX)

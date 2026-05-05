@@ -13,9 +13,9 @@
  */
 module rt.tlsgc;
 
-import core.stdc.stdlib;
-
-static import rt.lifetime, rt.sections;
+import core.exception : onOutOfMemoryError;
+import core.stdc.stdlib : free, malloc;
+static import rt.sections;
 
 /**
  * Per thread record to store thread associated data for garbage collection.
@@ -32,8 +32,7 @@ struct Data
 void* init() nothrow @nogc
 {
     auto data = cast(Data*).malloc(Data.sizeof);
-    import core.exception;
-    if ( data is null ) core.exception.onOutOfMemoryError();
+    if ( data is null ) onOutOfMemoryError();
     *data = Data.init;
 
     // do module specific initialization
@@ -53,7 +52,7 @@ void destroy(void* data) nothrow @nogc
     .free(data);
 }
 
-alias void delegate(void* pstart, void* pend) nothrow ScanDg;
+alias ScanDg = void delegate(void* pstart, void* pend) nothrow;
 
 /**
  * GC scan hook, called FOR each thread. Can be used to scan

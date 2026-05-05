@@ -1,5 +1,5 @@
 /* Default target hook functions.
-   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+   Copyright (C) 2003-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -159,6 +159,23 @@ default_promote_function_mode_always_promote (const_tree type,
 					      const_tree funtype ATTRIBUTE_UNUSED,
 					      int for_return ATTRIBUTE_UNUSED)
 {
+  return promote_mode (type, mode, punsignedp);
+}
+
+/* Sign-extend signed 8/16-bit integer arguments to 32 bits and
+   zero-extend unsigned 8/16-bit integer arguments to 32 bits.  */
+
+machine_mode
+default_promote_function_mode_sign_extend (const_tree type,
+					   machine_mode mode,
+					   int *punsignedp,
+					   const_tree, int)
+{
+  if (GET_MODE_CLASS (mode) == MODE_INT
+      && (GET_MODE_SIZE (as_a <scalar_int_mode> (mode))
+	  < GET_MODE_SIZE (SImode)))
+    return SImode;
+
   return promote_mode (type, mode, punsignedp);
 }
 
@@ -924,9 +941,12 @@ default_stack_protect_guard (void)
     {
       rtx x;
 
+      if (targetm.stack_protect_guard_symbol_p ())
+	t = lang_hooks.types.type_for_mode (ptr_mode, 1);
+      else
+	t = ptr_type_node;
       t = build_decl (UNKNOWN_LOCATION,
-		      VAR_DECL, get_identifier ("__stack_chk_guard"),
-		      ptr_type_node);
+		      VAR_DECL, get_identifier ("__stack_chk_guard"), t);
       TREE_STATIC (t) = 1;
       TREE_PUBLIC (t) = 1;
       DECL_EXTERNAL (t) = 1;
@@ -937,8 +957,14 @@ default_stack_protect_guard (void)
 
       /* Do not share RTL as the declaration is visible outside of
 	 current function.  */
-      x = DECL_RTL (t);
-      RTX_FLAG (x, used) = 1;
+      if (mode_mem_attrs[(int) DECL_MODE (t)])
+	{
+	  /* NB: Don't call make_decl_rtl when mode_mem_attrs isn't
+	     initialized.  -save-temps won't initialize mode_mem_attrs
+	     and make_decl_rtl will fail.  */
+	  x = DECL_RTL (t);
+	  RTX_FLAG (x, used) = 1;
+	}
 
       stack_chk_guard_decl = t;
     }
@@ -1305,6 +1331,14 @@ default_ira_change_pseudo_allocno_class (int regno ATTRIBUTE_UNUSED,
   return cl;
 }
 
+int
+default_ira_callee_saved_register_cost_scale (int)
+{
+  return (optimize_size
+	  ? 1
+	  : REG_FREQ_FROM_BB (ENTRY_BLOCK_PTR_FOR_FN (cfun)));
+}
+
 extern bool
 default_lra_p (void)
 {
@@ -1543,11 +1577,11 @@ default_builtin_vector_alignment_reachable (const_tree /*type*/, bool is_packed)
    is_packed is true if the memory access is defined in a packed struct.  */
 bool
 default_builtin_support_vector_misalignment (machine_mode mode,
-					     const_tree type
-					     ATTRIBUTE_UNUSED,
 					     int misalignment
 					     ATTRIBUTE_UNUSED,
 					     bool is_packed
+					     ATTRIBUTE_UNUSED,
+					     bool is_gather_scatter
 					     ATTRIBUTE_UNUSED)
 {
   if (optab_handler (movmisalign_optab, mode) != CODE_FOR_nothing)
@@ -1782,6 +1816,16 @@ default_addr_space_convert (rtx op ATTRIBUTE_UNUSED,
 {
   gcc_unreachable ();
 }
+
+
+/* The default hook for TARGET_ADDR_SPACE_FOR_ARTIFICIAL_RODATA.  */
+
+addr_space_t
+default_addr_space_for_artificial_rodata (tree, artificial_rodata)
+{
+  return ADDR_SPACE_GENERIC;
+}
+
 
 /* The defualt implementation of TARGET_HARD_REGNO_NREGS.  */
 
@@ -2073,6 +2117,33 @@ default_register_move_cost (machine_mode mode ATTRIBUTE_UNUSED,
   return REGISTER_MOVE_COST (MACRO_MODE (mode),
 			     (enum reg_class) from, (enum reg_class) to);
 #endif
+}
+
+/* The default implementation of TARGET_CALLEE_SAVE_COST.  */
+
+int
+default_callee_save_cost (spill_cost_type spill_type, unsigned int,
+			  machine_mode, unsigned int, int mem_cost,
+			  const HARD_REG_SET &callee_saved_regs,
+			  bool existing_spills_p)
+{
+  if (!existing_spills_p)
+    {
+      auto frame_type = (spill_type == spill_cost_type::SAVE
+			 ? frame_cost_type::ALLOCATION
+			 : frame_cost_type::DEALLOCATION);
+      mem_cost += targetm.frame_allocation_cost (frame_type,
+						 callee_saved_regs);
+    }
+  return mem_cost;
+}
+
+/* The default implementation of TARGET_FRAME_ALLOCATION_COST.  */
+
+int
+default_frame_allocation_cost (frame_cost_type, const HARD_REG_SET &)
+{
+  return 0;
 }
 
 /* The default implementation of TARGET_SLOW_UNALIGNED_ACCESS.  */
@@ -2719,6 +2790,14 @@ default_preferred_else_value (unsigned, tree type, unsigned, tree *)
   return build_zero_cst (type);
 }
 
+/* The default implementation of TARGET_INSTRUCTION_SELECTION.  */
+
+bool
+default_instruction_selection (function *, gimple_stmt_iterator *)
+{
+  return false;
+}
+
 /* Default implementation of TARGET_HAVE_SPECULATION_SAFE_VALUE.  */
 bool
 default_have_speculation_safe_value (bool active ATTRIBUTE_UNUSED)
@@ -2771,7 +2850,7 @@ default_memtag_can_tag_addresses ()
 }
 
 uint8_t
-default_memtag_tag_size ()
+default_memtag_tag_bitsize ()
 {
   return 8;
 }

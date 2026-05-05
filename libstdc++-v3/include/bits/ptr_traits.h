@@ -1,6 +1,6 @@
 // Pointer Traits -*- C++ -*-
 
-// Copyright (C) 2011-2025 Free Software Foundation, Inc.
+// Copyright (C) 2011-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -36,7 +36,7 @@
 
 #if __cplusplus > 201703L
 #include <concepts>
-namespace __gnu_debug { struct _Safe_iterator_base; }
+namespace __gnu_debug { class _Safe_iterator_base; }
 #endif
 
 namespace std _GLIBCXX_VISIBILITY(default)
@@ -97,13 +97,15 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       using pointer = _Ptr;
       using element_type = _Elt;
 
+      // _GLIBCXX_RESOLVE_LIB_DEFECTS
+      // 3454. pointer_traits::pointer_to should be constexpr
       /**
        *  @brief  Obtain a pointer to an object
        *  @param  __r  A reference to an object of type `element_type`
        *  @return `pointer::pointer_to(__r)`
        *  @pre `pointer::pointer_to(__r)` is a valid expression.
       */
-      static pointer
+      static _GLIBCXX20_CONSTEXPR pointer
       pointer_to(element_type& __r)
 #if __cpp_lib_concepts
       requires requires {
@@ -223,7 +225,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   /**
    * @brief Obtain address referenced by a pointer to an object
    * @param __ptr A pointer to an object
-   * @return @c __ptr
+   * @return `__ptr`
    * @ingroup pointer_abstractions
   */
   template<typename _Tp>
@@ -239,8 +241,8 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
   /**
    * @brief Obtain address referenced by a pointer to an object
    * @param __ptr A pointer to an object
-   * @return @c pointer_traits<_Ptr>::to_address(__ptr) if that expression is
-             well-formed, otherwise @c to_address(__ptr.operator->())
+   * @return `pointer_traits<_Ptr>::to_address(__ptr)` if that expression is
+   *         well-formed, otherwise `to_address(__ptr.operator->())`.
    * @ingroup pointer_abstractions
   */
   template<typename _Ptr>

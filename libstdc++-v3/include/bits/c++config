@@ -1,6 +1,6 @@
 // Predefined symbols and macros -*- C++ -*-
 
-// Copyright (C) 1997-2025 Free Software Foundation, Inc.
+// Copyright (C) 1997-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -222,6 +222,14 @@
 # endif
 #endif
 
+#ifndef _GLIBCXX26_CONSTEXPR
+# if __cplusplus >= 202400L
+#  define _GLIBCXX26_CONSTEXPR constexpr
+# else
+#  define _GLIBCXX26_CONSTEXPR
+# endif
+#endif
+
 #ifndef _GLIBCXX17_INLINE
 # if __cplusplus >= 201703L
 #  define _GLIBCXX17_INLINE inline
@@ -253,7 +261,7 @@
 # if __cpp_exceptions
 #  define _GLIBCXX_THROW_OR_ABORT(_EXC) (throw (_EXC))
 # else
-#  define _GLIBCXX_THROW_OR_ABORT(_EXC) (__builtin_abort())
+#  define _GLIBCXX_THROW_OR_ABORT(_EXC) (__builtin_abort(), (void)(_EXC))
 # endif
 #endif
 
@@ -263,6 +271,12 @@
 #else
 #define _GLIBCXX_NOEXCEPT_PARM
 #define _GLIBCXX_NOEXCEPT_QUAL
+#endif
+
+#if __cpp_auto_cast
+# define _GLIBCXX_AUTO_CAST(X) auto(X)
+#else
+# define _GLIBCXX_AUTO_CAST(X) ::std::__decay_t<decltype((X))>(X)
 #endif
 
 // Macro for extern template, ie controlling template linkage via use
@@ -885,7 +899,7 @@ namespace __gnu_cxx
 #ifdef __has_builtin
 # ifdef __is_identifier
 // Intel and older Clang require !__is_identifier for some built-ins:
-#  define _GLIBCXX_HAS_BUILTIN(B) __has_builtin(B) || ! __is_identifier(B)
+#  define _GLIBCXX_HAS_BUILTIN(B) (__has_builtin(B) || ! __is_identifier(B))
 # else
 #  define _GLIBCXX_HAS_BUILTIN(B) __has_builtin(B)
 # endif
@@ -911,6 +925,13 @@ namespace __gnu_cxx
 # define _GLIBCXX_USE_BUILTIN_TRAIT(BT) _GLIBCXX_HAS_BUILTIN(BT)
 #else
 # define _GLIBCXX_USE_BUILTIN_TRAIT(BT) 0
+#endif
+
+// Whether deducing this is usable either officially, if in C++23 mode, or
+// as an extension (Clang doesn't support the latter).
+#if __cpp_explicit_this_parameter \
+  || (__cplusplus >= 201103L && __GNUC__ >= 14 && !defined(_GLIBCXX_CLANG))
+# define _GLIBCXX_EXPLICIT_THIS_PARAMETER 202110L
 #endif
 
 // Mark code that should be ignored by the compiler, but seen by Doxygen.

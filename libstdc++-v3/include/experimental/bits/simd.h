@@ -1,6 +1,6 @@
 // Definition of the public simd interfaces -*- C++ -*-
 
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -55,6 +55,11 @@
 #include <arm_sve.h>
 #endif
 
+/** @namespace std::experimental::parallelism_v2
+ *  @ingroup ts_simd
+ */
+_GLIBCXX_SIMD_BEGIN_NAMESPACE
+
 /** @ingroup ts_simd
  * @{
  */
@@ -78,7 +83,6 @@
  * Variable names:
  * __k: mask object (vector- or bitmask)
  */
-_GLIBCXX_SIMD_BEGIN_NAMESPACE
 
 #if !_GLIBCXX_SIMD_X86INTRIN
 using __m128  [[__gnu__::__vector_size__(16)]] = float;
@@ -2469,13 +2473,16 @@ template <>
 template <typename _Tp, size_t _Bytes>
   struct __intrinsic_type<_Tp, _Bytes, enable_if_t<__is_vectorizable_v<_Tp> && _Bytes <= 64>>
   {
-    static_assert(!is_same_v<_Tp, long double>,
+    // allow _Tp == long double with -mlong-double-64
+    static_assert(!(is_same_v<_Tp, long double>
+		    && sizeof(long double) > sizeof(double)),
 		  "no __intrinsic_type support for long double on x86");
 
     static constexpr size_t _S_VBytes = _Bytes <= 16 ? 16 : _Bytes <= 32 ? 32 : 64;
 
     using type [[__gnu__::__vector_size__(_S_VBytes)]]
-      = conditional_t<is_integral_v<_Tp>, long long int, _Tp>;
+      = conditional_t<is_integral_v<_Tp>, long long int,
+		      conditional_t<is_same_v<_Tp, long double>, double, _Tp> >;
   };
 #endif // _GLIBCXX_SIMD_HAVE_SSE
 
@@ -4634,7 +4641,7 @@ template <template <int> class _Abi, int _Bytes, typename _Tp>
     static constexpr auto
     _S_choose()
     {
-      constexpr int _NextBytes = std::__bit_ceil(_Bytes) / 2;
+      constexpr int _NextBytes = std::__bit_ceil((unsigned)_Bytes) / 2;
       using _NextAbi = _Abi<_NextBytes>;
       if constexpr (_NextBytes < sizeof(_Tp) * 2) // break recursion
 	return _Abi<_Bytes>();

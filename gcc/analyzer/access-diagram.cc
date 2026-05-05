@@ -1,5 +1,5 @@
 /* Text art visualizations within -fanalyzer.
-   Copyright (C) 2023-2025 Free Software Foundation, Inc.
+   Copyright (C) 2023-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -17,28 +17,18 @@ You should have received a copy of the GNU General Public License
 along with GCC; see the file COPYING3.  If not see
 <http://www.gnu.org/licenses/>.  */
 
-#include "config.h"
 #define INCLUDE_ALGORITHM
 #define INCLUDE_MAP
 #define INCLUDE_SET
-#define INCLUDE_VECTOR
-#include "system.h"
-#include "coretypes.h"
-#include "coretypes.h"
-#include "tree.h"
-#include "function.h"
-#include "basic-block.h"
-#include "gimple.h"
-#include "diagnostic-core.h"
-#include "diagnostic.h"
+#include "analyzer/common.h"
+
+#include "fold-const.h"
 #include "intl.h"
-#include "make-unique.h"
-#include "tree-diagnostic.h" /* for default_tree_printer.  */
-#include "analyzer/analyzer.h"
+
+#include "text-art/ruler.h"
+
 #include "analyzer/region-model.h"
 #include "analyzer/access-diagram.h"
-#include "text-art/ruler.h"
-#include "fold-const.h"
 #include "analyzer/analyzer-selftests.h"
 
 #if ENABLE_ANALYZER
@@ -245,7 +235,7 @@ get_access_size_str (style_manager &sm,
       pp_format_decoder (&pp) = default_tree_printer;
       if (num_bits.maybe_print_for_user (&pp, op.m_model))
 	{
-	  if (op.m_dir == DIR_READ)
+	  if (op.m_dir == access_direction::read)
 	    return fmt_styled_string (sm,
 				      _("read of %qT (%s)"),
 				      type,
@@ -257,7 +247,7 @@ get_access_size_str (style_manager &sm,
 				      pp_formatted_text (&pp));
 	}
     }
-  if (op.m_dir == DIR_READ)
+  if (op.m_dir == access_direction::read)
     {
       if (auto p
 	  = num_bits.maybe_get_formatted_str (sm, op.m_model,
@@ -284,13 +274,13 @@ get_access_size_str (style_manager &sm,
 
   if (type)
     {
-      if (op.m_dir == DIR_READ)
+      if (op.m_dir == access_direction::read)
 	return fmt_styled_string (sm, _("read of %qT"), type);
       else
 	return fmt_styled_string (sm, _("write of %qT"), type);
     }
 
-  if (op.m_dir == DIR_READ)
+  if (op.m_dir == access_direction::read)
     return styled_string (sm, _("read"));
   else
     return styled_string (sm, _("write"));
@@ -375,11 +365,11 @@ bit_size_expr::maybe_get_formatted_str (text_art::style_manager &sm,
 	  if (!wi::fits_uhwi_p (concrete_num_bytes))
 	    return nullptr;
 	  if (concrete_num_bytes == 1)
-	    return ::make_unique <text_art::styled_string>
+	    return std::make_unique <text_art::styled_string>
 	      (fmt_styled_string (sm, concrete_single_byte_fmt,
 				  concrete_num_bytes.to_uhwi ()));
 	  else
-	    return ::make_unique <text_art::styled_string>
+	    return std::make_unique <text_art::styled_string>
 	      (fmt_styled_string (sm, concrete_plural_bytes_fmt,
 				  concrete_num_bytes.to_uhwi ()));
 	}
@@ -389,7 +379,7 @@ bit_size_expr::maybe_get_formatted_str (text_art::style_manager &sm,
 	  pp_format_decoder (&pp) = default_tree_printer;
 	  if (!num_bytes->maybe_print_for_user (&pp, model))
 	    return nullptr;
-	  return ::make_unique <text_art::styled_string>
+	  return std::make_unique <text_art::styled_string>
 	    (fmt_styled_string (sm, symbolic_bytes_fmt,
 				pp_formatted_text (&pp)));
 	}
@@ -400,11 +390,11 @@ bit_size_expr::maybe_get_formatted_str (text_art::style_manager &sm,
       if (!wi::fits_uhwi_p (concrete_num_bits))
 	return nullptr;
       if (concrete_num_bits == 1)
-	return ::make_unique <text_art::styled_string>
+	return std::make_unique <text_art::styled_string>
 	  (fmt_styled_string (sm, concrete_single_bit_fmt,
 			      concrete_num_bits.to_uhwi ()));
       else
-	return ::make_unique <text_art::styled_string>
+	return std::make_unique <text_art::styled_string>
 	  (fmt_styled_string (sm, concrete_plural_bits_fmt,
 			      concrete_num_bits.to_uhwi ()));
     }
@@ -414,7 +404,7 @@ bit_size_expr::maybe_get_formatted_str (text_art::style_manager &sm,
       pp_format_decoder (&pp) = default_tree_printer;
       if (!m_num_bits.maybe_print_for_user (&pp, model))
 	return nullptr;
-      return ::make_unique <text_art::styled_string>
+      return std::make_unique <text_art::styled_string>
 	(fmt_styled_string (sm, symbolic_bits_fmt,
 			    pp_formatted_text (&pp)));
     }
@@ -1126,7 +1116,7 @@ public:
       {
 	logger.start_log_line ();
 	logger.log_partial ("table_x: %i", table_x);
-	access_range range_for_column (NULL, bit_range (0, 0));
+	access_range range_for_column (nullptr, bit_range (0, 0));
 	if (maybe_get_access_range_for_table_x (table_x, &range_for_column))
 	  {
 	    logger.log_partial (": range: ");
@@ -1222,23 +1212,18 @@ public:
   : svalue_spatial_item (sval, bits, kind),
     m_compound_sval (sval)
   {
-    const binding_map &map = m_compound_sval.get_map ();
+    const concrete_binding_map &map = m_compound_sval.get_concrete_bindings ();
     auto_vec <const binding_key *> binding_keys;
     for (auto iter : map)
       {
-	const binding_key *key = iter.first;
+	const bit_range &key = iter.first;
 	const svalue *bound_sval = iter.second;
-	if (const concrete_binding *concrete_key
-	      = key->dyn_cast_concrete_binding ())
-	  {
-	    access_range range (nullptr,
-				concrete_key->get_bit_range ());
-	    if (std::unique_ptr<spatial_item> child
-		  = make_existing_svalue_spatial_item (bound_sval,
-						       range,
-						       theme))
-	      m_children.push_back (std::move (child));
-	  }
+	access_range range (nullptr, key);
+	if (std::unique_ptr<spatial_item> child
+	    = make_existing_svalue_spatial_item (bound_sval,
+						 range,
+						 theme))
+	  m_children.push_back (std::move (child));
       }
   }
 
@@ -1310,7 +1295,7 @@ class valid_region_spatial_item : public spatial_item
 {
 public:
   valid_region_spatial_item (const access_operation &op,
-			     diagnostic_event_id_t region_creation_event_id,
+			     diagnostics::paths::event_id_t region_creation_event_id,
 			     const theme &theme)
   : m_op (op),
     m_region_creation_event_id (region_creation_event_id),
@@ -1533,7 +1518,7 @@ public:
 
 private:
   const access_operation &m_op;
-  diagnostic_event_id_t m_region_creation_event_id;
+  diagnostics::paths::event_id_t m_region_creation_event_id;
   mutable const boundaries *m_boundaries;
   const svalue *m_existing_sval;
   std::unique_ptr<spatial_item> m_existing_sval_spatial_item;
@@ -1975,11 +1960,11 @@ make_written_svalue_spatial_item (const access_operation &op,
   if (const initial_svalue *initial_sval = sval.dyn_cast_initial_svalue ())
     if (const string_region *string_reg
 	= initial_sval->get_region ()->dyn_cast_string_region ())
-      return make_unique <string_literal_spatial_item>
+      return std::make_unique <string_literal_spatial_item>
 	(sval, actual_bits,
 	 *string_reg, theme,
 	 svalue_spatial_item::kind::WRITTEN);
-  return make_unique <written_svalue_spatial_item> (op, sval, actual_bits);
+  return std::make_unique <written_svalue_spatial_item> (op, sval, actual_bits);
 }
 
 static std::unique_ptr<spatial_item>
@@ -2000,7 +1985,7 @@ make_existing_svalue_spatial_item (const svalue *sval,
 	const initial_svalue *initial_sval = (const initial_svalue *)sval;
 	if (const string_region *string_reg
 	    = initial_sval->get_region ()->dyn_cast_string_region ())
-	  return make_unique <string_literal_spatial_item>
+	  return std::make_unique <string_literal_spatial_item>
 	    (*sval, bits,
 	     *string_reg, theme,
 	     svalue_spatial_item::kind::EXISTING);
@@ -2008,7 +1993,7 @@ make_existing_svalue_spatial_item (const svalue *sval,
       }
 
     case SK_COMPOUND:
-      return make_unique<compound_svalue_spatial_item>
+      return std::make_unique<compound_svalue_spatial_item>
 	(*((const compound_svalue *)sval),
 	 bits,
 	 svalue_spatial_item::kind::EXISTING,
@@ -2022,7 +2007,7 @@ class access_diagram_impl : public vbox_widget
 {
 public:
   access_diagram_impl (const access_operation &op,
-		       diagnostic_event_id_t region_creation_event_id,
+		       diagnostics::paths::event_id_t region_creation_event_id,
 		       style_manager &sm,
 		       const theme &theme,
 		       logger *logger)
@@ -2116,7 +2101,7 @@ public:
     }
 
     m_col_widths
-      = make_unique <table_dimension_sizes> (m_btm.get_num_columns ());
+      = std::make_unique <table_dimension_sizes> (m_btm.get_num_columns ());
 
     /* Now create child widgets.  */
 
@@ -2211,8 +2196,8 @@ private:
   std::unique_ptr<boundaries>
   find_boundaries () const
   {
-    std::unique_ptr<boundaries> result
-      = make_unique<boundaries> (*m_op.m_base_region, m_logger);
+    auto result
+      = std::make_unique<boundaries> (*m_op.m_base_region, m_logger);
 
     m_valid_region_spatial_item.add_boundaries (*result, m_logger);
     m_accessed_region_spatial_item.add_boundaries (*result, m_logger);
@@ -2224,10 +2209,10 @@ private:
 
   void add_aligned_child_table (table t)
   {
-    x_aligned_table_widget *w
-      = new x_aligned_table_widget (std::move (t), m_theme, *m_col_widths);
-    m_aligned_table_widgets.push_back (w);
-    add_child (std::unique_ptr<widget> (w));
+    auto w = std::make_unique<x_aligned_table_widget> (std::move (t),
+						       m_theme, *m_col_widths);
+    m_aligned_table_widgets.push_back (w.get ());
+    add_child (std::move (w));
   }
 
   /* Create a table showing headings for use by -fanalyzer-debug-text-art, for
@@ -2254,7 +2239,7 @@ private:
     for (int table_x = 0; table_x < t.get_size ().w; table_x++)
       {
 	const int table_y = 1;
-	access_range range_for_column (NULL, bit_range (0, 0));
+	access_range range_for_column (nullptr, bit_range (0, 0));
 	if (m_btm.maybe_get_access_range_for_table_x (table_x,
 						      &range_for_column))
 	  {
@@ -2271,7 +2256,7 @@ private:
 
   void add_direction_widget ()
   {
-    add_child (::make_unique<direction_widget> (*this, m_btm));
+    add_child (std::make_unique<direction_widget> (*this, m_btm));
   }
 
   void add_invalid_accesses_to_region_table (table &t_region)
@@ -2371,8 +2356,7 @@ private:
   {
     LOG_SCOPE (m_logger);
 
-    x_aligned_x_ruler_widget *w
-      = new x_aligned_x_ruler_widget (*this, m_theme);
+    auto w = std::make_unique<x_aligned_x_ruler_widget> (*this, m_theme);
 
     access_range invalid_before_bits;
     if (m_op.maybe_get_invalid_before_bits (&invalid_before_bits))
@@ -2382,7 +2366,7 @@ private:
 	bit_size_expr num_before_bits
 	  (invalid_before_bits.get_size (m_op.get_manager ()));
 	std::unique_ptr<styled_string> label;
-	if (m_op.m_dir == DIR_READ)
+	if (m_op.m_dir == access_direction::read)
 	  label = num_before_bits.maybe_get_formatted_str
 	    (m_sm, m_op.m_model,
 	     _("under-read of %wi bit"),
@@ -2420,10 +2404,10 @@ private:
       valid_bits.log ("valid_bits", *m_logger);
 
     got_valid_bits = true;
-    maybe_add_gap (w, invalid_before_bits, valid_bits);
+    maybe_add_gap (w.get (), invalid_before_bits, valid_bits);
 
     std::unique_ptr<styled_string> label;
-    if (m_op.m_dir == DIR_READ)
+    if (m_op.m_dir == access_direction::read)
       label = num_valid_bits.maybe_get_formatted_str (m_sm,
 						      m_op.m_model,
 						      _("size: %wi bit"),
@@ -2451,7 +2435,7 @@ private:
     if (m_op.maybe_get_invalid_after_bits (&invalid_after_bits))
       {
 	if (got_valid_bits)
-	  maybe_add_gap (w, valid_bits, invalid_after_bits);
+	  maybe_add_gap (w.get (), valid_bits, invalid_after_bits);
 
 	if (m_logger)
 	  invalid_before_bits.log ("invalid_after_bits", *m_logger);
@@ -2459,7 +2443,7 @@ private:
 	bit_size_expr num_after_bits
 	  (invalid_after_bits.get_size (m_op.get_manager ()));
 	std::unique_ptr<styled_string> label;
-	if (m_op.m_dir == DIR_READ)
+	if (m_op.m_dir == access_direction::read)
 	  label = num_after_bits.maybe_get_formatted_str
 	    (m_sm, m_op.m_model,
 	     _("over-read of %wi bit"),
@@ -2488,7 +2472,7 @@ private:
 	  m_logger->log ("no invalid_after_bits");
       }
 
-    add_child (std::unique_ptr<widget> (w));
+    add_child (std::move (w));
   }
 
   /* Subroutine of calc_req_size.
@@ -2505,7 +2489,7 @@ private:
     std::vector<bit_offset_t> bit_sizes (num_columns);
     for (unsigned table_x = 0; table_x < num_columns; table_x++)
       {
-	access_range range_for_column (NULL, bit_range (0, 0));
+	access_range range_for_column (nullptr, bit_range (0, 0));
 	if (m_btm.maybe_get_access_range_for_table_x (table_x,
 						      &range_for_column))
 	  {
@@ -2574,7 +2558,7 @@ private:
   }
 
   const access_operation &m_op;
-  diagnostic_event_id_t m_region_creation_event_id;
+  diagnostics::paths::event_id_t m_region_creation_event_id;
   style_manager &m_sm;
   const theme &m_theme;
   logger *m_logger;
@@ -2658,7 +2642,7 @@ direction_widget::paint_to_canvas (canvas &canvas)
 	    (canvas,
 	     canvas_x,
 	     canvas::range_t (get_y_range ()),
-	     (m_dia_impl.get_op ().m_dir == DIR_READ
+	     (m_dia_impl.get_op ().m_dir == access_direction::read
 	      ? theme::y_arrow_dir::UP
 	      : theme::y_arrow_dir::DOWN),
 	     style_id);
@@ -2672,15 +2656,16 @@ direction_widget::paint_to_canvas (canvas &canvas)
    an access_diagram_impl.  */
 
 access_diagram::access_diagram (const access_operation &op,
-				diagnostic_event_id_t region_creation_event_id,
+				diagnostics::paths::event_id_t region_creation_event_id,
 				style_manager &sm,
 				const theme &theme,
 				logger *logger)
-: wrapper_widget (make_unique <access_diagram_impl> (op,
-						     region_creation_event_id,
-						     sm,
-						     theme,
-						     logger))
+: wrapper_widget
+    (std::make_unique <access_diagram_impl> (op,
+					     region_creation_event_id,
+					     sm,
+					     theme,
+					     logger))
 {
 }
 

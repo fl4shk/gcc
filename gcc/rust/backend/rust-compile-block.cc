@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -19,6 +19,7 @@
 #include "rust-compile-block.h"
 #include "rust-compile-stmt.h"
 #include "rust-compile-expr.h"
+#include "rust-hir-expr.h"
 
 namespace Rust {
 namespace Compile {
@@ -28,10 +29,10 @@ CompileBlock::CompileBlock (Context *ctx, Bvariable *result)
 {}
 
 tree
-CompileBlock::compile (HIR::BlockExpr *expr, Context *ctx, Bvariable *result)
+CompileBlock::compile (HIR::BlockExpr &expr, Context *ctx, Bvariable *result)
 {
   CompileBlock compiler (ctx, result);
-  compiler.visit (*expr);
+  compiler.visit (expr);
   return compiler.translated;
 }
 
@@ -60,10 +61,10 @@ CompileBlock::visit (HIR::BlockExpr &expr)
 
   if (expr.has_expr ())
     {
-      tree compiled_expr = CompileExpr::Compile (expr.expr.get (), ctx);
+      tree compiled_expr = CompileExpr::Compile (expr.get_final_expr (), ctx);
       if (result != nullptr)
 	{
-	  location_t locus = expr.get_final_expr ()->get_locus ();
+	  location_t locus = expr.get_final_expr ().get_locus ();
 	  tree result_reference = Backend::var_expression (result, locus);
 
 	  tree assignment
@@ -75,7 +76,7 @@ CompileBlock::visit (HIR::BlockExpr &expr)
   else if (result != nullptr)
     {
       location_t locus = expr.get_locus ();
-      tree compiled_expr = unit_expression (ctx, expr.get_locus ());
+      tree compiled_expr = unit_expression (expr.get_locus ());
       tree result_reference = Backend::var_expression (result, locus);
 
       tree assignment
@@ -93,10 +94,8 @@ CompileConditionalBlocks::visit (HIR::IfExpr &expr)
 {
   fncontext fnctx = ctx->peek_fn ();
   tree fndecl = fnctx.fndecl;
-  tree condition_expr
-    = CompileExpr::Compile (expr.get_if_condition ().get (), ctx);
-  tree then_block
-    = CompileBlock::compile (expr.get_if_block ().get (), ctx, result);
+  tree condition_expr = CompileExpr::Compile (expr.get_if_condition (), ctx);
+  tree then_block = CompileBlock::compile (expr.get_if_block (), ctx, result);
 
   translated = Backend::if_statement (fndecl, condition_expr, then_block, NULL,
 				      expr.get_locus ());
@@ -107,23 +106,20 @@ CompileConditionalBlocks::visit (HIR::IfExprConseqElse &expr)
 {
   fncontext fnctx = ctx->peek_fn ();
   tree fndecl = fnctx.fndecl;
-  tree condition_expr
-    = CompileExpr::Compile (expr.get_if_condition ().get (), ctx);
-  tree then_block
-    = CompileBlock::compile (expr.get_if_block ().get (), ctx, result);
+  tree condition_expr = CompileExpr::Compile (expr.get_if_condition (), ctx);
+  tree then_block = CompileBlock::compile (expr.get_if_block (), ctx, result);
 
   // else block
   std::vector<Bvariable *> locals;
-  location_t start_location = expr.get_else_block ()->get_locus ();
-  location_t end_location = expr.get_else_block ()->get_locus (); // FIXME
+  location_t start_location = expr.get_else_block ().get_locus ();
+  location_t end_location = expr.get_else_block ().get_locus (); // FIXME
   tree enclosing_scope = ctx->peek_enclosing_scope ();
   tree else_block = Backend::block (fndecl, enclosing_scope, locals,
 				    start_location, end_location);
   ctx->push_block (else_block);
 
   tree else_stmt_decl
-    = CompileExprWithBlock::compile (expr.get_else_block ().get (), ctx,
-				     result);
+    = CompileExprWithBlock::compile (&expr.get_else_block (), ctx, result);
 
   ctx->add_statement (else_stmt_decl);
 

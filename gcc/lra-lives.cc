@@ -1,5 +1,5 @@
 /* Build live ranges for pseudos.
-   Copyright (C) 2010-2025 Free Software Foundation, Inc.
+   Copyright (C) 2010-2026 Free Software Foundation, Inc.
    Contributed by Vladimir Makarov <vmakarov@redhat.com>.
 
 This file is part of GCC.
@@ -111,6 +111,15 @@ free_live_range_list (lra_live_range_t lr)
       lra_live_range_pool.remove (lr);
       lr = next;
     }
+}
+
+/* Reset and release live range list LR.  */
+void
+lra_reset_live_range_list (lra_live_range_t &lr)
+{
+  lra_live_range_t first = lr;
+  lr = NULL;
+  free_live_range_list (first);
 }
 
 /* Create and return pseudo live range with given attributes.  */
@@ -623,7 +632,7 @@ clear_sparseset_regnos (sparseset set, int regno, enum machine_mode mode)
 {
   if (regno >= FIRST_PSEUDO_REGISTER)
     {
-      sparseset_clear_bit (dead_set, regno);
+      sparseset_clear_bit (set, regno);
       return;
     }
   for (int last = end_hard_regno (mode, regno); regno < last; regno++)
@@ -636,7 +645,7 @@ static bool
 regnos_in_sparseset_p (sparseset set, int regno, enum machine_mode mode)
 {
   if (regno >= FIRST_PSEUDO_REGISTER)
-    return sparseset_bit_p (dead_set, regno);
+    return sparseset_bit_p (set, regno);
   for (int last = end_hard_regno (mode, regno); regno < last; regno++)
     if (!sparseset_bit_p (set, regno))
       return false;
@@ -1522,6 +1531,19 @@ lra_create_live_ranges (bool all_p, bool dead_insn_p)
   lra_clear_live_ranges ();
   bool res = lra_create_live_ranges_1 (all_p, false);
   lra_assert (! res);
+}
+
+/* Run lra_create_live_ranges if !complete_info_p.  Return FALSE iff
+   live ranges are known to have remained unchanged.  */
+
+bool
+lra_complete_live_ranges (void)
+{
+  if (complete_info_p)
+    return false;
+
+  lra_create_live_ranges (true, true);
+  return true;
 }
 
 /* Finish all live ranges.  */

@@ -1,12 +1,12 @@
 /**
  * A `Dsymbol` representing a renamed import.
  *
- * Copyright:   Copyright (C) 1999-2024 by The D Language Foundation, All Rights Reserved
+ * Copyright:   Copyright (C) 1999-2026 by The D Language Foundation, All Rights Reserved
  * Authors:     $(LINK2 https://www.digitalmars.com, Walter Bright)
  * License:     $(LINK2 https://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/src/dmd/dimport.d, _dimport.d)
+ * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/compiler/src/dmd/dimport.d, _dimport.d)
  * Documentation:  https://dlang.org/phobos/dmd_dimport.html
- * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/src/dmd/dimport.d
+ * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/compiler/src/dmd/dimport.d
  */
 
 module dmd.dimport;
@@ -40,7 +40,7 @@ extern (C++) final class Import : Dsymbol
     // corresponding AliasDeclarations for alias=name pairs
     AliasDeclarations aliasdecls;
 
-    extern (D) this(const ref Loc loc, Identifier[] packages, Identifier id, Identifier aliasId, int isstatic)
+    extern (D) this(Loc loc, Identifier[] packages, Identifier id, Identifier aliasId, int isstatic)
     {
         Identifier selectIdent()
         {
@@ -59,7 +59,7 @@ extern (C++) final class Import : Dsymbol
             return id;
         }
 
-        super(loc, selectIdent());
+        super(DSYM.import_, loc, selectIdent());
 
         assert(id);
         version (none)
@@ -95,7 +95,7 @@ extern (C++) final class Import : Dsymbol
     {
         assert(!s);
         auto si = new Import(loc, packages, id, aliasId, isstatic);
-        si.comment = comment;
+        si.addComment(comment);
         assert(!(isstatic && names.length));
         if (names.length && !si.aliasId)
             si.ident = null;
@@ -140,31 +140,6 @@ extern (C++) final class Import : Dsymbol
         }
         scopesym.addAccessiblePackage(mod, visibility); // d
      }
-
-    override Dsymbol toAlias()
-    {
-        if (aliasId)
-            return mod;
-        return this;
-    }
-
-    override bool overloadInsert(Dsymbol s)
-    {
-        /* Allow multiple imports with the same package base, but disallow
-         * alias collisions
-         * https://issues.dlang.org/show_bug.cgi?id=5412
-         */
-        assert(ident && ident == s.ident);
-        if (aliasId)
-            return false;
-        const imp = s.isImport();
-        return imp && !imp.aliasId;
-    }
-
-    override inout(Import) isImport() inout
-    {
-        return this;
-    }
 
     override void accept(Visitor v)
     {

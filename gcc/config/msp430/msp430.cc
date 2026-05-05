@@ -1,5 +1,5 @@
 /* Subroutines used for code generation on TI MSP430 processors.
-   Copyright (C) 2012-2025 Free Software Foundation, Inc.
+   Copyright (C) 2012-2026 Free Software Foundation, Inc.
    Contributed by Red Hat.
 
    This file is part of GCC.
@@ -3165,8 +3165,7 @@ msp430_expand_epilogue (int is_eh)
   emit_jump_insn (gen_msp430_return ());
 }
 
-/* Implements EH_RETURN_STACKADJ_RTX.  Saved and used later in
-   m32c_emit_eh_epilogue.  */
+/* Implements EH_RETURN_STACKADJ_RTX.  */
 rtx
 msp430_eh_return_stackadj_rtx (void)
 {

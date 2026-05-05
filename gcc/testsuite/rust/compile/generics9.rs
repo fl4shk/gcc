@@ -1,5 +1,8 @@
+#![feature(no_core)]
+#![no_core]
+
 struct Foo<A, B = (A, B)>(A, B);
-// { dg-error "failed to resolve TypePath: B" "" { target *-*-* } .-1 }
+// { dg-error "type parameters with a default cannot use forward declared identifiers" "" { target *-*-* } .-1 }
 
 fn main() {
     let a: Foo<bool>;

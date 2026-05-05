@@ -1,12 +1,12 @@
 /**
  * Implement $(LINK2 https://digitalmars.com/articles/b62.html, Value Range Propagation).
  *
- * Copyright:   Copyright (C) 1999-2024 by The D Language Foundation, All Rights Reserved
+ * Copyright:   Copyright (C) 1999-2026 by The D Language Foundation, All Rights Reserved
  * Authors:     $(LINK2 https://www.digitalmars.com, Walter Bright)
  * License:     $(LINK2 https://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/src/dmd/intrange.d, _intrange.d)
+ * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/compiler/src/dmd/intrange.d, _intrange.d)
  * Documentation:  https://dlang.org/phobos/dmd_intrange.html
- * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/src/dmd/intrange.d
+ * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/compiler/src/dmd/intrange.d
  */
 
 module dmd.intrange;
@@ -141,7 +141,7 @@ struct SignExtendedNumber
 
     SignExtendedNumber opBinary(string op : "*")(SignExtendedNumber rhs)
     {
-        // perform *saturated* multiplication, otherwise we may get bogus ranges
+        // perform* saturated* multiplication, otherwise we may get bogus ranges
         //  like 0x10 * 0x10 == 0x100 == 0.
 
         /* Special handling for zeros:
@@ -314,30 +314,6 @@ struct IntRange
         imax = upper;
     }
 
-    static IntRange fromType(Type type)
-    {
-        return fromType(type, type.isUnsigned());
-    }
-
-    static IntRange fromType(Type type, bool isUnsigned)
-    {
-        if (!type.isIntegral() || type.toBasetype().isTypeVector())
-            return widest();
-
-        uinteger_t mask = type.sizemask();
-        auto lower = SignExtendedNumber(0);
-        auto upper = SignExtendedNumber(mask);
-        if (type.toBasetype().ty == Tdchar)
-            upper.value = 0x10FFFFUL;
-        else if (!isUnsigned)
-        {
-            lower.value = ~(mask >> 1);
-            lower.negative = true;
-            upper.value = (mask >> 1);
-        }
-        return IntRange(lower, upper);
-    }
-
     static IntRange fromNumbers2(SignExtendedNumber* numbers)
     {
         if (numbers[0] < numbers[1])
@@ -439,26 +415,6 @@ struct IntRange
         if (imax.value > 0x10FFFFUL)
             imax.value = 0x10FFFFUL;
         return this;
-    }
-
-    IntRange _cast(Type type)
-    {
-        if (!type.isIntegral() || type.toBasetype().isTypeVector())
-            return this;
-        if (!type.isUnsigned())
-            return castSigned(type.sizemask());
-        if (type.toBasetype().ty == Tdchar)
-            return castDchar();
-            return castUnsigned(type.sizemask());
-    }
-
-    IntRange castUnsigned(Type type)
-    {
-        if (!type.isIntegral() || type.toBasetype().isTypeVector())
-            return castUnsigned(ulong.max);
-        if (type.toBasetype().ty == Tdchar)
-            return castDchar();
-        return castUnsigned(type.sizemask());
     }
 
     bool contains(IntRange a) @safe

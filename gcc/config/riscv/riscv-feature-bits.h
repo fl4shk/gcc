@@ -1,6 +1,6 @@
 /* Definition of RISC-V feature bits corresponding to
    libgcc/config/riscv/feature_bits.c
-   Copyright (C) 2024-2025 Free Software Foundation, Inc.
+   Copyright (C) 2024-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -26,13 +26,6 @@ along with GCC; see the file COPYING3.  If not see
 struct riscv_feature_bits {
   unsigned length;
   unsigned long long features[RISCV_FEATURE_BITS_LENGTH];
-};
-
-#define RISCV_VENDOR_FEATURE_BITS_LENGTH 1
-
-struct riscv_vendor_feature_bits {
-  unsigned length;
-  unsigned long long features[RISCV_VENDOR_FEATURE_BITS_LENGTH];
 };
 
 struct riscv_cpu_model {

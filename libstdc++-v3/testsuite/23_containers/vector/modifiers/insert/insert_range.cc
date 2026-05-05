@@ -39,28 +39,34 @@ do_test()
   VERIFY( eq(v, a) );
   v.clear();
   v.shrink_to_fit();
-  v.insert_range(v.begin(), Range(a, a+3));
-  v.insert_range(v.end(), Range(a+6, a+9));
-  v.insert_range(v.begin()+3, Range(a+3, a+6));
+  auto it = v.insert_range(v.begin(), Range(a, a+3));
+  VERIFY( it == v.begin() );
+  it = v.insert_range(v.end(), Range(a+6, a+9));
+  VERIFY( it == v.begin()+3 );
+  it = v.insert_range(v.begin()+3, Range(a+3, a+6));
+  VERIFY( it == v.begin()+3 );
   VERIFY( eq(v, a) );
   v.resize(3);
-  v.insert_range(v.begin()+1, Range(a+4, a+9));
-  v.insert_range(v.begin()+1, Range(a+1, a+4));
+  it = v.insert_range(v.begin()+1, Range(a+4, a+9));
+  VERIFY( it == v.begin()+1 );
+  it = v.insert_range(v.begin()+1, Range(a+1, a+4));
+  VERIFY( it == v.begin()+1 );
   v.resize(9);
   VERIFY( eq(v, a) );
-  v.insert_range(v.begin() + 6, Range(a, a));
+  it = v.insert_range(v.begin() + 6, Range(a, a));
+  VERIFY( it == v.begin() + 6 );
   VERIFY( eq(v, a) );
 }
 
 template<typename Range>
-void
+constexpr void
 do_test_a()
 {
   do_test<Range, std::allocator<int>>();
   do_test<Range, __gnu_test::SimpleAllocator<int>>();
 }
 
-bool
+constexpr bool
 test_ranges()
 {
   using namespace __gnu_test;
@@ -82,9 +88,9 @@ test_ranges()
 
   // Not lvalue-convertible to int
   struct C {
-    C(int v) : val(v) { }
-    operator int() && { return val; }
-    bool operator==(int b) const { return b == val; }
+    constexpr C(int v) : val(v) { }
+    constexpr operator int() && { return val; }
+    constexpr bool operator==(int b) const { return b == val; }
     int val;
   };
   using rvalue_input_range = test_range<C, input_iterator_wrapper_rval>;
@@ -93,16 +99,58 @@ test_ranges()
   return true;
 }
 
-constexpr bool
-test_constexpr()
+struct SelfAssignChecker {
+  static int moveCounter;
+  static int copyCounter;
+
+  SelfAssignChecker() = default;
+  constexpr SelfAssignChecker(int v) : val(v) { }
+  SelfAssignChecker(const SelfAssignChecker&) = default;
+  SelfAssignChecker(SelfAssignChecker&&) = default;
+
+  SelfAssignChecker operator=(const SelfAssignChecker& rhs)
+  {
+    if (this == &rhs)
+      ++copyCounter;
+    this->val = rhs.val;
+    return *this;
+  }
+
+  SelfAssignChecker operator=(SelfAssignChecker&& rhs)
+  {
+    if (this == &rhs)
+      ++moveCounter;
+    this->val = rhs.val;
+    return *this;
+  }
+
+  int val;
+
+  friend bool operator==(SelfAssignChecker, SelfAssignChecker) = default;
+};
+
+int SelfAssignChecker::moveCounter = 0;
+int SelfAssignChecker::copyCounter = 0;
+
+void
+test_pr121313()
 {
-  // XXX: this doesn't test the non-forward_range code paths are constexpr.
-  do_test<std::span<short>, std::allocator<int>>();
-  return true;
+  using namespace __gnu_test;
+
+  SelfAssignChecker::copyCounter = SelfAssignChecker::moveCounter = 0;
+  do_test<test_forward_range<int>, std::allocator<SelfAssignChecker>>();
+  VERIFY( SelfAssignChecker::moveCounter == 0 );
+  VERIFY( SelfAssignChecker::copyCounter == 0 );
+
+  SelfAssignChecker::copyCounter = SelfAssignChecker::moveCounter = 0;
+  do_test<test_input_range<int>, std::allocator<SelfAssignChecker>>();
+  VERIFY( SelfAssignChecker::moveCounter == 0 );
+  VERIFY( SelfAssignChecker::copyCounter == 0 );
 }
 
 int main()
 {
   test_ranges();
-  static_assert( test_constexpr() );
+  test_pr121313();
+  static_assert( test_ranges() );
 }

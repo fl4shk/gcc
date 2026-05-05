@@ -1,7 +1,7 @@
 /* Routines for restoring various data types from a file stream.  This deals
    with various data types like strings, integers, enums, etc.
 
-   Copyright (C) 2011-2025 Free Software Foundation, Inc.
+   Copyright (C) 2011-2026 Free Software Foundation, Inc.
    Contributed by Diego Novillo <dnovillo@google.com>
 
 This file is part of GCC.
@@ -223,7 +223,7 @@ streamer_read_value_range (class lto_input_block *ib, data_in *data_in,
   tree type = stream_read_tree (ib, data_in);
 
   // Initialize the value_range to the correct type.
-  vr.set_type (type);
+  vr.set_range_class (type);
 
   if (is_a <irange> (vr))
     {

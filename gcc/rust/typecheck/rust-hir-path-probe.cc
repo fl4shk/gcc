@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -137,7 +137,7 @@ PathProbeCandidate::operator< (const PathProbeCandidate &c) const
 
 // PathProbeType
 
-PathProbeType::PathProbeType (const TyTy::BaseType *receiver,
+PathProbeType::PathProbeType (TyTy::BaseType *receiver,
 			      const HIR::PathIdentSegment &query,
 			      DefId specific_trait_id)
   : TypeCheckBase (), receiver (receiver), search (query),
@@ -145,7 +145,7 @@ PathProbeType::PathProbeType (const TyTy::BaseType *receiver,
 {}
 
 std::set<PathProbeCandidate>
-PathProbeType::Probe (const TyTy::BaseType *receiver,
+PathProbeType::Probe (TyTy::BaseType *receiver,
 		      const HIR::PathIdentSegment &segment_name,
 		      bool probe_impls, bool probe_bounds,
 		      bool ignore_mandatory_trait_items,
@@ -168,7 +168,7 @@ PathProbeType::Probe (const TyTy::BaseType *receiver,
   if (!probe_bounds)
     return probe.candidates;
 
-  if (!probe.is_reciever_generic ())
+  if (!probe.is_receiver_generic ())
     {
       std::vector<std::pair<TraitReference *, HIR::ImplBlock *>> probed_bounds
 	= TypeBoundsProbe::Probe (receiver);
@@ -208,12 +208,12 @@ void
 PathProbeType::visit (HIR::TypeAlias &alias)
 {
   Identifier name = alias.get_new_type_name ();
-  if (search.as_string ().compare (name.as_string ()) == 0)
+  if (search.to_string ().compare (name.as_string ()) == 0)
     {
       HirId tyid = alias.get_mappings ().get_hirid ();
       TyTy::BaseType *ty = nullptr;
-      bool ok = query_type (tyid, &ty);
-      rust_assert (ok);
+      if (!query_type (tyid, &ty))
+	return;
 
       PathProbeCandidate::ImplItemCandidate impl_item_candidate{&alias,
 								current_impl};
@@ -228,12 +228,12 @@ void
 PathProbeType::visit (HIR::ConstantItem &constant)
 {
   Identifier name = constant.get_identifier ();
-  if (search.as_string ().compare (name.as_string ()) == 0)
+  if (search.to_string ().compare (name.as_string ()) == 0)
     {
       HirId tyid = constant.get_mappings ().get_hirid ();
       TyTy::BaseType *ty = nullptr;
-      bool ok = query_type (tyid, &ty);
-      rust_assert (ok);
+      if (!query_type (tyid, &ty))
+	return;
 
       PathProbeCandidate::ImplItemCandidate impl_item_candidate{&constant,
 								current_impl};
@@ -248,12 +248,12 @@ void
 PathProbeType::visit (HIR::Function &function)
 {
   Identifier name = function.get_function_name ();
-  if (search.as_string ().compare (name.as_string ()) == 0)
+  if (search.to_string ().compare (name.as_string ()) == 0)
     {
       HirId tyid = function.get_mappings ().get_hirid ();
       TyTy::BaseType *ty = nullptr;
-      bool ok = query_type (tyid, &ty);
-      rust_assert (ok);
+      if (!query_type (tyid, &ty))
+	return;
 
       PathProbeCandidate::ImplItemCandidate impl_item_candidate{&function,
 								current_impl};
@@ -271,13 +271,13 @@ PathProbeType::process_enum_item_for_candiates (const TyTy::ADTType *adt)
     return;
 
   TyTy::VariantDef *v;
-  if (!adt->lookup_variant (search.as_string (), &v))
+  if (!adt->lookup_variant (search.to_string (), &v))
     return;
 
   PathProbeCandidate::EnumItemCandidate enum_item_candidate{adt, v};
   PathProbeCandidate candidate{PathProbeCandidate::CandidateType::ENUM_VARIANT,
 			       receiver->clone (),
-			       mappings->lookup_location (adt->get_ty_ref ()),
+			       mappings.lookup_location (adt->get_ty_ref ()),
 			       enum_item_candidate};
   candidates.insert (std::move (candidate));
 }
@@ -285,7 +285,7 @@ PathProbeType::process_enum_item_for_candiates (const TyTy::ADTType *adt)
 void
 PathProbeType::process_impl_items_for_candidates ()
 {
-  mappings->iterate_impl_items (
+  mappings.iterate_impl_items (
     [&] (HirId id, HIR::ImplItem *item, HIR::ImplBlock *impl) mutable -> bool {
       process_impl_item_candidate (id, item, impl);
       return true;
@@ -297,16 +297,15 @@ PathProbeType::process_impl_item_candidate (HirId id, HIR::ImplItem *item,
 					    HIR::ImplBlock *impl)
 {
   current_impl = impl;
-  HirId impl_ty_id = impl->get_type ()->get_mappings ().get_hirid ();
+  HirId impl_ty_id = impl->get_type ().get_mappings ().get_hirid ();
   TyTy::BaseType *impl_block_ty = nullptr;
   if (!query_type (impl_ty_id, &impl_block_ty))
     return;
 
-  if (!receiver->can_eq (impl_block_ty, false))
-    {
-      if (!impl_block_ty->can_eq (receiver, false))
-	return;
-    }
+  if (!types_compatable (TyTy::TyWithLocation (receiver),
+			 TyTy::TyWithLocation (impl_block_ty),
+			 impl->get_locus (), false))
+    return;
 
   // lets visit the impl_item
   item->accept_vis (*this);
@@ -318,7 +317,7 @@ PathProbeType::process_associated_trait_for_candidates (
   bool ignore_mandatory_trait_items)
 {
   const TraitItemReference *trait_item_ref = nullptr;
-  if (!trait_ref->lookup_trait_item (search.as_string (), &trait_item_ref))
+  if (!trait_ref->lookup_trait_item (search.to_string (), &trait_item_ref))
     return;
 
   bool trait_item_needs_implementation = !trait_item_ref->is_optional ();
@@ -346,7 +345,7 @@ PathProbeType::process_associated_trait_for_candidates (
 
   const TyTy::TypeBoundPredicate p (*trait_ref, BoundPolarity::RegularBound,
 				    UNDEF_LOCATION);
-  TyTy::TypeBoundPredicateItem item (&p, trait_item_ref);
+  TyTy::TypeBoundPredicateItem item (p, trait_item_ref);
 
   TyTy::BaseType *trait_item_tyty = item.get_raw_item ()->get_tyty ();
   if (receiver->get_kind () != TyTy::DYNAMIC)
@@ -367,15 +366,15 @@ PathProbeType::process_predicate_for_candidates (
 {
   const TraitReference *trait_ref = predicate.get ();
 
-  TyTy::TypeBoundPredicateItem item
-    = predicate.lookup_associated_item (search.as_string ());
-  if (item.is_error ())
+  tl::optional<TyTy::TypeBoundPredicateItem> item
+    = predicate.lookup_associated_item (search.to_string ());
+  if (!item.has_value ())
     return;
 
-  if (ignore_mandatory_trait_items && item.needs_implementation ())
+  if (ignore_mandatory_trait_items && item->needs_implementation ())
     return;
 
-  const TraitItemReference *trait_item_ref = item.get_raw_item ();
+  const TraitItemReference *trait_item_ref = item->get_raw_item ();
   PathProbeCandidate::CandidateType candidate_type;
   switch (trait_item_ref->get_trait_item_type ())
     {
@@ -395,9 +394,9 @@ PathProbeType::process_predicate_for_candidates (
       break;
     }
 
-  TyTy::BaseType *trait_item_tyty = item.get_raw_item ()->get_tyty ();
+  TyTy::BaseType *trait_item_tyty = item->get_raw_item ()->get_tyty ();
   if (receiver->get_kind () != TyTy::DYNAMIC)
-    trait_item_tyty = item.get_tyty_for_receiver (receiver);
+    trait_item_tyty = item->get_tyty_for_receiver (receiver);
 
   PathProbeCandidate::TraitItemCandidate trait_item_candidate{trait_ref,
 							      trait_item_ref,
@@ -425,15 +424,15 @@ PathProbeType::union_bounds (
     }
 
   std::vector<std::pair<const TraitReference *, HIR::ImplBlock *>> union_set;
+
   for (auto it = mapper.begin (); it != mapper.end (); it++)
-    {
-      union_set.push_back ({it->second.first, it->second.second});
-    }
+    union_set.emplace_back (it->second.first, it->second.second);
+
   return union_set;
 }
 
 bool
-PathProbeType::is_reciever_generic () const
+PathProbeType::is_receiver_generic () const
 {
   const TyTy::BaseType *root = receiver->get_root ();
   bool receiver_is_type_param = root->get_kind () == TyTy::TypeKind::PARAM;
@@ -443,7 +442,7 @@ PathProbeType::is_reciever_generic () const
 
 // PathProbImplTrait
 
-PathProbeImplTrait::PathProbeImplTrait (const TyTy::BaseType *receiver,
+PathProbeImplTrait::PathProbeImplTrait (TyTy::BaseType *receiver,
 					const HIR::PathIdentSegment &query,
 					const TraitReference *trait_reference)
   : PathProbeType (receiver, query, UNKNOWN_DEFID),
@@ -451,7 +450,7 @@ PathProbeImplTrait::PathProbeImplTrait (const TyTy::BaseType *receiver,
 {}
 
 std::set<PathProbeCandidate>
-PathProbeImplTrait::Probe (const TyTy::BaseType *receiver,
+PathProbeImplTrait::Probe (TyTy::BaseType *receiver,
 			   const HIR::PathIdentSegment &segment_name,
 			   const TraitReference *trait_reference)
 {
@@ -465,15 +464,14 @@ PathProbeImplTrait::Probe (const TyTy::BaseType *receiver,
 void
 PathProbeImplTrait::process_trait_impl_items_for_candidates ()
 {
-  mappings->iterate_impl_items (
+  mappings.iterate_impl_items (
     [&] (HirId id, HIR::ImplItem *item, HIR::ImplBlock *impl) mutable -> bool {
       // just need to check if this is an impl block for this trait the next
       // function checks the receiver
       if (!impl->has_trait_ref ())
 	return true;
 
-      TraitReference *resolved
-	= TraitResolver::Lookup (*(impl->get_trait_ref ().get ()));
+      TraitReference *resolved = TraitResolver::Lookup (impl->get_trait_ref ());
       if (!trait_reference->is_equal (*resolved))
 	return true;
 

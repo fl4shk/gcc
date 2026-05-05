@@ -42,14 +42,14 @@ do_test()
 }
 
 template<typename Range>
-void
+constexpr void
 do_test_a()
 {
   do_test<Range, std::allocator<int>>();
   do_test<Range, __gnu_test::SimpleAllocator<int>>();
 }
 
-bool
+constexpr bool
 test_ranges()
 {
   using namespace __gnu_test;
@@ -71,9 +71,9 @@ test_ranges()
 
   // Not lvalue-convertible to int
   struct C {
-    C(int v) : val(v) { }
-    operator int() && { return val; }
-    bool operator==(int b) const { return b == val; }
+    constexpr C(int v) : val(v) { }
+    constexpr operator int() && { return val; }
+    constexpr bool operator==(int b) const { return b == val; }
     int val;
   };
   using rvalue_input_range = test_range<C, input_iterator_wrapper_rval>;
@@ -82,16 +82,131 @@ test_ranges()
   return true;
 }
 
-constexpr bool
-test_constexpr()
+constexpr void
+test_overlapping()
 {
-  // XXX: this doesn't test the non-forward_range code paths are constexpr.
-  do_test<std::span<short>, std::allocator<int>>();
-  return true;
+  using __gnu_test::test_input_range;
+  using __gnu_test::test_forward_range;
+
+  struct X {
+    unsigned* p;
+    constexpr X(int i = 0) : p(new unsigned(i)) { }
+    constexpr X(const X& m) : p(new unsigned(*m.p)) { }
+    constexpr X(X&& m) noexcept : p(m.p) { m.p = nullptr; }
+    constexpr ~X() { delete p; }
+  };
+
+  std::vector<X> vec;
+  unsigned size = 5;
+  vec.reserve(size);
+  for (unsigned i = 0; i < size; ++i)
+    vec.emplace_back(i);
+
+  // Append an input range that overlaps with vec.
+  {
+    __gnu_test::test_input_range<X> r(vec.data(), vec.data() + size);
+    vec.append_range(r);
+    VERIFY( vec.size() == 2 * size );
+    for (unsigned i = 0; i < size; ++i)
+    {
+      VERIFY( *vec[i].p == i );
+      VERIFY( *vec[i+size].p == i );
+    }
+  }
+
+  size = vec.size() - 2;
+  vec.resize(size);
+  for (unsigned i = 0; i < size; ++i)
+    *vec[i].p = i;
+
+  // Repeat with unused capacity in the vector.
+  {
+    __gnu_test::test_input_range<X> r(vec.data(), vec.data() + size);
+    vec.append_range(r);
+    VERIFY( vec.size() == 2 * size );
+    for (unsigned i = 0; i < size; ++i)
+    {
+      VERIFY( *vec[i].p == i );
+      VERIFY( *vec[i+size].p == i );
+    }
+  }
+
+  size = vec.size() - 2;
+  vec.resize(size);
+  for (unsigned i = 0; i < size; ++i)
+    *vec[i].p = i;
+
+  // Repeat with input range that doesn't overlap full vector.
+  {
+    __gnu_test::test_input_range<X> r(vec.data() + 1, vec.data() + 4);
+    vec.append_range(r);
+    VERIFY( vec.size() == size + 3 );
+    for (unsigned i = 0; i < size; ++i)
+    {
+      VERIFY( *vec[i].p == i );
+      if (i < 3)
+	VERIFY( *vec[i+size].p == i+1 );
+    }
+  }
+
+  size = 5;
+  vec.resize(size);
+  for (unsigned i = 0; i < size; ++i)
+    *vec[i].p = i;
+
+  // Append a forward range that overlaps with vec.
+  {
+    __gnu_test::test_forward_range<X> r(vec.data(), vec.data() + size);
+    vec.append_range(r);
+    VERIFY( vec.size() == 2 * size );
+    for (unsigned i = 0; i < size; ++i)
+    {
+      VERIFY( *vec[i].p == i );
+      VERIFY( *vec[i+size].p == i );
+    }
+  }
+
+  size = vec.size() - 2;
+  vec.resize(size);
+  for (unsigned i = 0; i < size; ++i)
+    *vec[i].p = i;
+
+  // Repeat with insufficient unused capacity in the vector.
+  {
+    __gnu_test::test_forward_range<X> r(vec.data(), vec.data() + size);
+    vec.append_range(r);
+    VERIFY( vec.size() == 2 * size );
+    for (unsigned i = 0; i < size; ++i)
+    {
+      VERIFY( *vec[i].p == i );
+      VERIFY( *vec[i+size].p == i );
+    }
+  }
+
+  size = vec.size() / 2;
+  vec.resize(size);
+
+  // Repeat with sufficient unused capacity in the vector.
+  {
+    __gnu_test::test_forward_range<X> r(vec.data(), vec.data() + size);
+    vec.append_range(r);
+    VERIFY( vec.size() == 2 * size );
+    for (unsigned i = 0; i < size; ++i)
+    {
+      VERIFY( *vec[i].p == i );
+      VERIFY( *vec[i+size].p == i );
+    }
+  }
 }
 
 int main()
 {
-  test_ranges();
-  static_assert( test_constexpr() );
+  auto test_all = [] {
+    test_ranges();
+    test_overlapping();
+    return true;
+  };
+
+  test_all();
+  static_assert( test_all() );
 }

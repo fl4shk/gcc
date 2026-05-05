@@ -6,7 +6,7 @@
 --                                                                          --
 --                                  B o d y                                 --
 --                                                                          --
---         Copyright (C) 1992-2025, Free Software Foundation, Inc.          --
+--         Copyright (C) 1992-2026, Free Software Foundation, Inc.          --
 --                                                                          --
 -- GNARL is free software; you can  redistribute it  and/or modify it under --
 -- terms of the  GNU General Public License as published  by the Free Soft- --
@@ -115,11 +115,13 @@ package body System.Tasking.Initialization is
    procedure Tasking_Runtime_Initialize;
    pragma Export (Ada, Tasking_Runtime_Initialize,
                   "__gnat_tasking_runtime_initialize");
+   pragma Linker_Constructor (Tasking_Runtime_Initialize);
    --  This procedure starts the initialization of the GNARL. It installs the
-   --  tasking versions of the RTS_Lock manipulation routines. It is called
+   --  tasking version of the RTS_Lock manipulation routines. It is called
    --  very early before the elaboration of all the Ada units of the program,
    --  including those of the runtime, because this elaboration may require
-   --  the initialization of RTS_Lock objects.
+   --  the initialization of RTS_Lock objects, which means that it must only
+   --  contain code to which pragma Restrictions (No_Elaboration_Code) applies.
 
    --------------------------
    -- Change_Base_Priority --
@@ -527,6 +529,7 @@ package body System.Tasking.Initialization is
                | Interrupt_Server_Blocked_Interrupt_Sleep
                | Interrupt_Server_Idle_Sleep
                | Timer_Server_Sleep
+               | Suspension_Object_Sleep
             =>
                Wakeup (T, T.Common.State);
 

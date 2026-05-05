@@ -40,10 +40,10 @@ test01()
   VERIFY( ss.str() == "121s 122s 123s 124s 125s 126s 127s " );
 
   ss.str("");
-  ss << std::hex << std::uppercase << duration<const char>(0x1A) << ' ';
-  ss << std::hex << std::uppercase << duration<const wchar_t>(0x2A) << ' ';
+  ss << std::hex << std::uppercase << duration<char>(0x1A) << ' ';
+  ss << std::hex << std::uppercase << duration<wchar_t>(0x2A) << ' ';
   ss << std::hex << std::uppercase << duration<signed char>(0x3A) << ' ';
-  ss << std::scientific << duration<const double>(4.5) << ' ';
+  ss << std::scientific << duration<double>(4.5) << ' ';
   VERIFY( ss.str() == "1As 2As 3As 4.500000E+00s " );
 }
 
@@ -79,10 +79,10 @@ test02()
   VERIFY( ss.str() == L"121s 122s 123s 124s 125s 126s 127s " );
 
   ss.str(L"");
-  ss << std::hex << std::uppercase << duration<const char>(0x1A) << ' ';
-  ss << std::hex << std::uppercase << duration<const wchar_t>(0x2A) << ' ';
+  ss << std::hex << std::uppercase << duration<char>(0x1A) << ' ';
+  ss << std::hex << std::uppercase << duration<wchar_t>(0x2A) << ' ';
   ss << std::hex << std::uppercase << duration<signed char>(0x3A) << ' ';
-  ss << std::scientific << duration<const double>(4.5) << ' ';
+  ss << std::scientific << duration<double>(4.5) << ' ';
   VERIFY( ss.str() == L"1As 2As 3As 4.500000E+00s " );
 #endif
 }
@@ -193,8 +193,8 @@ test_parse()
 {
   using namespace std::chrono;
   seconds s;
-  milliseconds ms;
-  microseconds us;
+  milliseconds ms{};
+  microseconds us{};
 
   std::istringstream is("   2023-07-24 13:05");
   VERIFY( is >> parse(" %Y-%m-%d %H:%M", s) );
@@ -289,13 +289,13 @@ test_parse()
 
   is.clear();
   is.str("0.5");
-  std::chrono::duration<double> ds;
+  std::chrono::duration<double> ds{};
   VERIFY( is >> parse("%S", ds) );
   VERIFY( ds == 0.5s );
 
   is.clear();
   is.str("0.125");
-  std::chrono::duration<double, std::milli> dms;
+  std::chrono::duration<double, std::milli> dms{};
   VERIFY( is >> parse("%S", dms) );
   VERIFY( dms == 0.125s );
 }

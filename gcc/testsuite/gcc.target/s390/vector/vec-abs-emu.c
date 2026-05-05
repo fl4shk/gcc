@@ -1,5 +1,5 @@
 /* { dg-do run } */
-/* { dg-options "-O3 -mzarch -march=z13 -save-temps" } */
+/* { dg-options "-O3 -mzarch -march=z13 -save-temps -fno-stack-protector" } */
 /* { dg-require-effective-target int128 } */
 /* { dg-final { check-function-bodies "**" "" "" } } */
 /* { dg-final { scan-assembler-not {\tvlpq\t} } } */
@@ -18,7 +18,7 @@ typedef __attribute__ ((vector_size (16))) signed __int128 v1ti;
 **	vchg	%v[0-9]+,%v[0-9]+,%v[0-9]+
 **	vn	%v[0-9]+,%v[0-9]+,%v[0-9]+
 **	vo	%v[0-9]+,%v[0-9]+,%v[0-9]+
-**	vrepg	%v[0-9]+,%v[0-9]+,1
+**	vrepg	%v[0-9]+,%v[0-9]+,0
 **	vsq	%v[0-9]+,%v[0-9]+,%v[0-9]+
 **	vsel	%v[0-9]+,%v[0-9]+,%v[0-9]+,%v[0-9]+
 **	br	%r14

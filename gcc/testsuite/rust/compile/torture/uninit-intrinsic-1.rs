@@ -1,3 +1,9 @@
+#![feature(no_core)]
+#![no_core]
+
+#![feature(intrinsics)]
+
+#![feature(lang_items)]
 #[lang = "sized"]
 pub trait Sized {}
 
@@ -9,7 +15,7 @@ mod intrinsics {
 
 mod mem {
     pub unsafe fn uninitialized<T>() -> T {
-        intrinsics::uninit()
+        crate::intrinsics::uninit()
     }
 }
 
@@ -19,6 +25,6 @@ struct Foo(i32, i32);
 
 impl Foo {
     pub fn new() -> Self {
-        unsafe { mem::uninitialized::<Foo>() }
+        unsafe { crate::mem::uninitialized::<Foo>() }
     }
 }

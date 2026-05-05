@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -18,6 +18,7 @@
 
 #include "rust-hir-type-check.h"
 #include "rust-type-util.h"
+#include "rust-hir-type-check-expr.h"
 
 namespace Rust {
 namespace Resolver {
@@ -73,6 +74,12 @@ TypeCheckContext::insert_builtin (HirId id, NodeId ref, TyTy::BaseType *type)
   builtins.push_back (std::unique_ptr<TyTy::BaseType> (type));
 }
 
+const std::vector<std::unique_ptr<TyTy::BaseType>> &
+TypeCheckContext::get_builtins () const
+{
+  return builtins;
+}
+
 void
 TypeCheckContext::insert_type (const Analysis::NodeMapping &mappings,
 			       TyTy::BaseType *type)
@@ -82,13 +89,6 @@ TypeCheckContext::insert_type (const Analysis::NodeMapping &mappings,
   HirId id = mappings.get_hirid ();
   node_id_refs[ref] = id;
   resolved[id] = type;
-}
-
-void
-TypeCheckContext::insert_implicit_type (TyTy::BaseType *type)
-{
-  rust_assert (type != nullptr);
-  resolved[type->get_ref ()] = type;
 }
 
 void
@@ -154,7 +154,7 @@ void
 TypeCheckContext::push_return_type (TypeCheckContextItem item,
 				    TyTy::BaseType *return_type)
 {
-  return_type_stack.push_back ({std::move (item), return_type});
+  return_type_stack.emplace_back (std::move (item), return_type);
 }
 
 void
@@ -169,6 +169,12 @@ TypeCheckContext::peek_context ()
 {
   rust_assert (!return_type_stack.empty ());
   return return_type_stack.back ().first;
+}
+
+StackedContexts<TypeCheckBlockContextItem> &
+TypeCheckContext::block_context ()
+{
+  return block_stack;
 }
 
 void
@@ -242,30 +248,17 @@ TypeCheckContext::lookup_trait_reference (DefId id, TraitReference **ref)
   return true;
 }
 
-void
-TypeCheckContext::insert_receiver (HirId id, TyTy::BaseType *t)
-{
-  receiver_context[id] = t;
-}
-
 bool
-TypeCheckContext::lookup_receiver (HirId id, TyTy::BaseType **ref)
-{
-  auto it = receiver_context.find (id);
-  if (it == receiver_context.end ())
-    return false;
-
-  *ref = it->second;
-  return true;
-}
-
-void
 TypeCheckContext::insert_associated_trait_impl (
   HirId id, AssociatedImplTrait &&associated)
 {
-  rust_assert (associated_impl_traits.find (id)
-	       == associated_impl_traits.end ());
+  auto it = associated_impl_traits.find (id);
+  if (it != associated_impl_traits.end ())
+    {
+      return false;
+    }
   associated_impl_traits.emplace (id, std::move (associated));
+  return true;
 }
 
 bool
@@ -311,8 +304,9 @@ TypeCheckContext::lookup_associated_type_mapping (HirId id, HirId *mapping)
 }
 
 void
-TypeCheckContext::insert_associated_impl_mapping (
-  HirId trait_id, const TyTy::BaseType *impl_type, HirId impl_id)
+TypeCheckContext::insert_associated_impl_mapping (HirId trait_id,
+						  TyTy::BaseType *impl_type,
+						  HirId impl_id)
 {
   auto it = associated_traits_to_impls.find (trait_id);
   if (it == associated_traits_to_impls.end ())
@@ -320,12 +314,13 @@ TypeCheckContext::insert_associated_impl_mapping (
       associated_traits_to_impls[trait_id] = {};
     }
 
-  associated_traits_to_impls[trait_id].push_back ({impl_type, impl_id});
+  associated_traits_to_impls[trait_id].emplace_back (impl_type, impl_id);
 }
 
 bool
-TypeCheckContext::lookup_associated_impl_mapping_for_self (
-  HirId trait_id, const TyTy::BaseType *self, HirId *mapping)
+TypeCheckContext::lookup_associated_impl_mapping_for_self (HirId trait_id,
+							   TyTy::BaseType *self,
+							   HirId *mapping)
 {
   auto it = associated_traits_to_impls.find (trait_id);
   if (it == associated_traits_to_impls.end ())
@@ -333,7 +328,9 @@ TypeCheckContext::lookup_associated_impl_mapping_for_self (
 
   for (auto &item : it->second)
     {
-      if (item.first->can_eq (self, false))
+      if (types_compatable (TyTy::TyWithLocation (item.first),
+			    TyTy::TyWithLocation (self), UNKNOWN_LOCATION,
+			    false))
 	{
 	  *mapping = item.second;
 	  return true;
@@ -418,6 +415,38 @@ TypeCheckContext::lookup_operator_overload (HirId id, TyTy::FnType **call)
 
   *call = it->second;
   return true;
+}
+
+void
+TypeCheckContext::insert_deferred_operator_overload (
+  DeferredOpOverload deferred)
+{
+  HirId expr_id = deferred.expr_id;
+  deferred_operator_overloads.emplace (std::make_pair (expr_id, deferred));
+}
+
+bool
+TypeCheckContext::lookup_deferred_operator_overload (
+  HirId id, DeferredOpOverload *deferred)
+{
+  auto it = deferred_operator_overloads.find (id);
+  if (it == deferred_operator_overloads.end ())
+    return false;
+
+  *deferred = it->second;
+  return true;
+}
+
+void
+TypeCheckContext::iterate_deferred_operator_overloads (
+  std::function<bool (HirId, DeferredOpOverload &)> cb)
+{
+  for (auto it = deferred_operator_overloads.begin ();
+       it != deferred_operator_overloads.end (); it++)
+    {
+      if (!cb (it->first, it->second))
+	return;
+    }
 }
 
 void
@@ -526,7 +555,16 @@ TypeCheckContext::lookup_lifetime (const HIR::Lifetime &lifetime) const
 {
   if (lifetime.get_lifetime_type () == AST::Lifetime::NAMED)
     {
-      rust_assert (lifetime.get_name () != "static");
+      if (lifetime.get_name () == "static")
+	{
+	  rich_location r (line_table, lifetime.get_locus ());
+	  r.add_fixit_insert_after (lifetime.get_locus (),
+				    "static is a reserved lifetime name");
+	  rust_error_at (r, ErrorCode::E0262,
+			 "invalid lifetime parameter name: %qs",
+			 lifetime.get_name ().c_str ());
+	  return tl::nullopt;
+	}
       const auto name = lifetime.get_name ();
       auto it = lifetime_name_interner.find (name);
       if (it == lifetime_name_interner.end ())
@@ -577,44 +615,77 @@ TypeCheckContext::regions_from_generic_args (const HIR::GenericArgs &args) const
   return regions;
 }
 
-void
-TypeCheckContext::compute_inference_variables (bool error)
+bool
+TypeCheckContext::compute_ambigious_op_overload (HirId id,
+						 DeferredOpOverload &op)
 {
-  auto mappings = Analysis::Mappings::get ();
+  rust_debug ("attempting resolution of op overload: %s",
+	      op.predicate.as_string ().c_str ());
 
-  // default inference variables if possible
+  TyTy::BaseType *lhs = nullptr;
+  bool ok = lookup_type (op.op.get_lvalue_mappings ().get_hirid (), &lhs);
+  rust_assert (ok);
+
+  TyTy::BaseType *rhs = nullptr;
+  if (op.op.has_rvalue_mappings ())
+    {
+      bool ok = lookup_type (op.op.get_rvalue_mappings ().get_hirid (), &rhs);
+      rust_assert (ok);
+    }
+
+  TypeCheckExpr::ResolveOpOverload (op.lang_item_type, op.op, lhs, rhs,
+				    op.specified_segment);
+
+  return true;
+}
+
+void
+TypeCheckContext::compute_inference_variables (bool emit_error)
+{
+  iterate_deferred_operator_overloads (
+    [&] (HirId id, DeferredOpOverload &op) mutable -> bool {
+      return compute_ambigious_op_overload (id, op);
+    });
+
   iterate ([&] (HirId id, TyTy::BaseType *ty) mutable -> bool {
-    // nothing to do
-    if (ty->get_kind () != TyTy::TypeKind::INFER)
-      return true;
-
-    TyTy::InferType *infer_var = static_cast<TyTy::InferType *> (ty);
-    TyTy::BaseType *default_type;
-
-    rust_debug_loc (mappings->lookup_location (id),
-		    "trying to default infer-var: %s",
-		    infer_var->as_string ().c_str ());
-    bool ok = infer_var->default_type (&default_type);
-    if (!ok)
-      {
-	if (error)
-	  rust_error_at (mappings->lookup_location (id), ErrorCode::E0282,
-			 "type annotations needed");
-	return true;
-      }
-
-    auto result
-      = unify_site (id, TyTy::TyWithLocation (ty),
-		    TyTy::TyWithLocation (default_type), UNDEF_LOCATION);
-    rust_assert (result);
-    rust_assert (result->get_kind () != TyTy::TypeKind::ERROR);
-    result->set_ref (id);
-    insert_type (Analysis::NodeMapping (mappings->get_current_crate (), 0, id,
-					UNKNOWN_LOCAL_DEFID),
-		 result);
-
-    return true;
+    return compute_infer_var (id, ty, emit_error);
   });
+}
+
+bool
+TypeCheckContext::compute_infer_var (HirId id, TyTy::BaseType *ty,
+				     bool emit_error)
+{
+  auto &mappings = Analysis::Mappings::get ();
+
+  // nothing to do
+  if (ty->get_kind () != TyTy::TypeKind::INFER)
+    return true;
+
+  TyTy::InferType *infer_var = static_cast<TyTy::InferType *> (ty);
+  TyTy::BaseType *default_type;
+
+  rust_debug_loc (mappings.lookup_location (id),
+		  "trying to default infer-var: %s",
+		  infer_var->as_string ().c_str ());
+  bool ok = infer_var->default_type (&default_type);
+  if (!ok)
+    {
+      if (emit_error)
+	rust_error_at (mappings.lookup_location (id), ErrorCode::E0282,
+		       "type annotations needed");
+      return true;
+    }
+
+  auto result
+    = unify_site (id, TyTy::TyWithLocation (ty),
+		  TyTy::TyWithLocation (default_type), UNDEF_LOCATION);
+  rust_assert (result);
+  rust_assert (result->get_kind () != TyTy::TypeKind::ERROR);
+  result->set_ref (id);
+  insert_implicit_type (id, result);
+
+  return true;
 }
 
 TyTy::VarianceAnalysis::CrateCtx &
@@ -640,9 +711,9 @@ TypeCheckContextItem::TypeCheckContextItem (HIR::Function *item)
   : type (ItemType::ITEM), item (item)
 {}
 
-TypeCheckContextItem::TypeCheckContextItem (HIR::ImplBlock *impl_block,
+TypeCheckContextItem::TypeCheckContextItem (HIR::ImplBlock &impl_block,
 					    HIR::Function *item)
-  : type (ItemType::IMPL_ITEM), item (impl_block, item)
+  : type (ItemType::IMPL_ITEM), item (&impl_block, item)
 {}
 
 TypeCheckContextItem::TypeCheckContextItem (HIR::TraitItemFunc *trait_item)
@@ -794,6 +865,44 @@ TypeCheckContextItem::get_defid () const
     }
 
   return UNKNOWN_DEFID;
+}
+
+// TypeCheckBlockContextItem
+
+TypeCheckBlockContextItem::Item::Item (HIR::ImplBlock *b) : block (b) {}
+
+TypeCheckBlockContextItem::Item::Item (HIR::Trait *t) : trait (t) {}
+
+TypeCheckBlockContextItem::TypeCheckBlockContextItem (HIR::ImplBlock *block)
+  : type (TypeCheckBlockContextItem::ItemType::IMPL_BLOCK), item (block)
+{}
+
+TypeCheckBlockContextItem::TypeCheckBlockContextItem (HIR::Trait *trait)
+  : type (TypeCheckBlockContextItem::ItemType::TRAIT), item (trait)
+{}
+
+bool
+TypeCheckBlockContextItem::is_impl_block () const
+{
+  return type == IMPL_BLOCK;
+}
+
+bool
+TypeCheckBlockContextItem::is_trait_block () const
+{
+  return type == TRAIT;
+}
+
+HIR::ImplBlock &
+TypeCheckBlockContextItem::get_impl_block ()
+{
+  return *(item.block);
+}
+
+HIR::Trait &
+TypeCheckBlockContextItem::get_trait ()
+{
+  return *(item.trait);
 }
 
 } // namespace Resolver

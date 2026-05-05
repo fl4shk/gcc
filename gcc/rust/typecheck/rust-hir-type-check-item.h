@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -51,9 +51,9 @@ public:
   void visit (HIR::ImplBlock &impl_block) override;
   void visit (HIR::ExternBlock &extern_block) override;
   void visit (HIR::Trait &trait_block) override;
+  void visit (HIR::ExternCrate &extern_crate) override;
 
   // nothing to do
-  void visit (HIR::ExternCrate &) override {}
   void visit (HIR::UseDeclaration &) override {}
 
 protected:
@@ -63,7 +63,8 @@ protected:
 				    bool &failure_flag);
 
   void validate_trait_impl_block (
-    HIR::ImplBlock &impl_block, TyTy::BaseType *self,
+    TraitReference *trait_reference, HIR::ImplBlock &impl_block,
+    TyTy::BaseType *self,
     std::vector<TyTy::SubstitutionParamMapping> &substitutions);
 
   TyTy::BaseType *resolve_impl_item (HIR::ImplBlock &impl_block,

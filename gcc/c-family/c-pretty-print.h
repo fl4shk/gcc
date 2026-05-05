@@ -1,5 +1,5 @@
 /* Various declarations for the C and C++ pretty-printers.
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Gabriel Dos Reis <gdr@integrable-solutions.net>
 
 This file is part of GCC.
@@ -49,8 +49,10 @@ typedef void (*c_pretty_print_fn) (c_pretty_printer *, tree);
    and cp/cxx-pretty-print.cc for an example of derivation.  */
 class c_pretty_printer : public pretty_printer
 {
+  dump_flags_t dump_flags;
+
 public:
-  c_pretty_printer ();
+  c_pretty_printer (dump_flags_t = TDF_NONE);
   std::unique_ptr<pretty_printer> clone () const override;
 
   // Format string, possibly translated.
@@ -100,6 +102,12 @@ public:
 #define pp_ptr_operator(PP, D)          (PP)->ptr_operator (PP, D)
 #define pp_parameter_list(PP, T)        (PP)->parameter_list (PP, T)
 
+#define pp_c_maybe_whitespace(PP)            \
+   do {                                      \
+     if ((PP)->get_padding () == pp_before)  \
+       pp_c_whitespace (PP);                 \
+   } while (0)
+
 void pp_c_whitespace (c_pretty_printer *);
 void pp_c_left_paren (c_pretty_printer *);
 void pp_c_right_paren (c_pretty_printer *);
@@ -136,7 +144,9 @@ void pp_c_ws_string (c_pretty_printer *, const char *);
 void pp_c_identifier (c_pretty_printer *, const char *);
 void pp_c_string_literal (c_pretty_printer *, tree);
 void pp_c_integer_constant (c_pretty_printer *, tree);
+void pp_c_function_target_version (c_pretty_printer *, tree);
+void pp_c_function_target_clones (c_pretty_printer *, tree);
 
-void print_c_tree (FILE *file, tree t);
+void print_c_tree (FILE *file, tree t, dump_flags_t);
 
 #endif /* GCC_C_PRETTY_PRINTER */

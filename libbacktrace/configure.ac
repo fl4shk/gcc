@@ -1,5 +1,5 @@
 # configure.ac -- Backtrace configure script.
-# Copyright (C) 2012-2025 Free Software Foundation, Inc.
+# Copyright (C) 2012-2026 Free Software Foundation, Inc.
 
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
@@ -37,7 +37,8 @@ if test -n "${with_target_subdir}"; then
   AM_ENABLE_MULTILIB(, ..)
 fi
 
-AC_CANONICAL_SYSTEM
+AC_CANONICAL_HOST
+AC_CANONICAL_TARGET
 target_alias=${target_alias-$host_alias}
 
 AC_USE_SYSTEM_EXTENSIONS
@@ -175,11 +176,16 @@ else
   fi
 fi
 
+# Enable --enable-host-pie.
+AC_ARG_ENABLE(host-pie,
+[AS_HELP_STRING([--enable-host-pie],
+                [build host code as PIE])],
+[PIC_FLAG=-fPIE], [PIC_FLAG=])
 # Enable --enable-host-shared.
 AC_ARG_ENABLE(host-shared,
 [AS_HELP_STRING([--enable-host-shared],
 		[build host code as shared libraries])],
-[PIC_FLAG=-fPIC], [PIC_FLAG=])
+[PIC_FLAG=-fPIC])
 AC_SUBST(PIC_FLAG)
 
 # Enable Intel CET on Intel CET enabled host if jit is enabled.
@@ -199,6 +205,16 @@ AC_CACHE_CHECK([__sync extensions],
 [if test -n "${with_target_subdir}"; then
    case "${host}" in
    hppa*-*-hpux*) libbacktrace_cv_sys_sync=no ;;
+   arm*-*-eabi*)
+     # Older versions of the Arm architecture lack the necessary instructions
+     # for these constructs, so check whether we can use them.
+     AC_LINK_IFELSE(
+       [AC_LANG_PROGRAM([int i;],
+                        [__sync_bool_compare_and_swap (&i, i, i);
+                         __sync_lock_test_and_set (&i, 1);
+                         __sync_lock_release (&i);])],
+       [libbacktrace_cv_sys_sync=yes],
+       [libbacktrace_cv_sys_sync=no]);;
    *) libbacktrace_cv_sys_sync=yes ;;
    esac
  else

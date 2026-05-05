@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -29,23 +29,36 @@ public:
   static constexpr auto &COLD = "cold";
   static constexpr auto &CFG = "cfg";
   static constexpr auto &CFG_ATTR = "cfg_attr";
+  static constexpr auto &DERIVE_ATTR = "derive";
   static constexpr auto &DEPRECATED = "deprecated";
   static constexpr auto &ALLOW = "allow";
+  static constexpr auto &DENY = "deny";
+  static constexpr auto &WARN = "warn";
+  static constexpr auto &FORBID = "forbid";
   static constexpr auto &ALLOW_INTERNAL_UNSTABLE = "allow_internal_unstable";
   static constexpr auto &DOC = "doc";
   static constexpr auto &MUST_USE = "must_use";
   static constexpr auto &LANG = "lang";
+  static constexpr auto &LINK_NAME = "link_name";
+  static constexpr auto &NO_CORE = "no_core";
+  static constexpr auto &NO_STD = "no_std";
   static constexpr auto &LINK_SECTION = "link_section";
   static constexpr auto &NO_MANGLE = "no_mangle";
+  static constexpr auto &EXPORT_NAME = "export_name";
   static constexpr auto &REPR = "repr";
   static constexpr auto &RUSTC_BUILTIN_MACRO = "rustc_builtin_macro";
+  static constexpr auto &RUSTC_MACRO_TRANSPARENCY = "rustc_macro_transparency";
   static constexpr auto &PATH = "path";
   static constexpr auto &MACRO_USE = "macro_use";
   static constexpr auto &MACRO_EXPORT = "macro_export";
   static constexpr auto &PROC_MACRO = "proc_macro";
   static constexpr auto &PROC_MACRO_DERIVE = "proc_macro_derive";
   static constexpr auto &PROC_MACRO_ATTRIBUTE = "proc_macro_attribute";
+  static constexpr auto &CRATE_NAME = "crate_name";
+  static constexpr auto &CRATE_TYPE = "crate_type";
+
   static constexpr auto &TARGET_FEATURE = "target_feature";
+  static constexpr auto &FEATURE = "feature";
   // From now on, these are reserved by the compiler and gated through
   // #![feature(rustc_attrs)]
   static constexpr auto &RUSTC_DEPRECATED = "rustc_deprecated";
@@ -53,6 +66,45 @@ public:
     = "rustc_inherit_overflow_checks";
   static constexpr auto &STABLE = "stable";
   static constexpr auto &UNSTABLE = "unstable";
+
+  static constexpr auto &RUSTC_PROMOTABLE = "rustc_promotable";
+  static constexpr auto &RUSTC_CONST_STABLE = "rustc_const_stable";
+  static constexpr auto &RUSTC_CONST_UNSTABLE = "rustc_const_unstable";
+  static constexpr auto &RUSTC_ALLOW_CONST_FN_UNSTABLE
+    = "rustc_allow_const_fn_unstable";
+
+  static constexpr auto &RUSTC_SPECIALIZATION_TRAIT
+    = "rustc_specialization_trait";
+  static constexpr auto &RUSTC_UNSAFE_SPECIALIZATION_MARKER
+    = "rustc_unsafe_specialization_marker";
+  static constexpr auto &RUSTC_RESERVATION_IMPL = "rustc_reservation_impl";
+  static constexpr auto &RUSTC_PAREN_SUGAR = "rustc_paren_sugar";
+  static constexpr auto &RUSTC_NONNULL_OPTIMIZATION_GUARANTEED
+    = "rustc_nonnull_optimization_guaranteed";
+
+  static constexpr auto &RUSTC_LAYOUT_SCALAR_VALID_RANGE_START
+    = "rustc_layout_scalar_valid_range_start";
+
+  static constexpr auto &COMPILER_BUILTINS = "compiler_builtins";
+  static constexpr auto &NO_BUILTINS = "no_builtins";
+
+  static constexpr auto &MAY_DANGLE = "may_dangle";
+  static constexpr auto &PRELUDE_IMPORT = "prelude_import";
+  static constexpr auto &TRACK_CALLER = "track_caller";
+
+  static constexpr auto &RUSTC_DIAGNOSTIC_ITEM = "rustc_diagnostic_item";
+  static constexpr auto &RUSTC_ON_UNIMPLEMENTED = "rustc_on_unimplemented";
+
+  static constexpr auto &FUNDAMENTAL = "fundamental";
+
+  static constexpr auto &NON_EXHAUSTIVE = "non_exhaustive";
+
+  static constexpr auto &RUSTFMT = "rustfmt";
+
+  static constexpr auto &TEST = "test";
+
+  static constexpr auto &RUSTC_ARGS_REQUIRED_CONST
+    = "rustc_args_required_const";
 };
 } // namespace Values
 } // namespace Rust

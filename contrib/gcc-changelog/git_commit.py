@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright (C) 2020-2025 Free Software Foundation, Inc.
+# Copyright (C) 2020-2026 Free Software Foundation, Inc.
 #
 # This file is part of GCC.
 #
@@ -33,11 +33,13 @@ default_changelog_locations = {
     'contrib/regression',
     'fixincludes',
     'gcc/ada',
+    'gcc/algol68',
     'gcc/analyzer',
     'gcc/brig',
     'gcc/c',
     'gcc/c-family',
     'gcc',
+    'gcc/cobol',
     'gcc/cp',
     'gcc/d',
     'gcc/fortran',
@@ -63,9 +65,11 @@ default_changelog_locations = {
     'libcpp/po',
     'libdecnumber',
     'libffi',
+    'libga68',
     'libgcc',
     'libgcc/config/avr/libf7',
     'libgcc/config/libbid',
+    'libgcobol',
     'libgfortran',
     'libgm2',
     'libgomp',
@@ -86,14 +90,17 @@ default_changelog_locations = {
 
 bug_components = {
     'ada',
+    'algol68',
     'analyzer',
     'boehm-gc',
     'bootstrap',
     'c',
     'c++',
+    'cobol',
     'd',
     'debug',
     'demangler',
+    'diagnostics',
     'driver',
     'fastjar',
     'fortran',
@@ -146,9 +153,12 @@ ignored_prefixes = {
     'gcc/testsuite/go.test/test/',
     'libffi/',
     'libgo/',
+    'libgrust/rustc-lib/core/',
+    'libgrust/rustc-lib/stdarch/',
     'libphobos/libdruntime/',
     'libphobos/src/',
     'libsanitizer/',
+    'zlib/',
     }
 
 wildcard_prefixes = {

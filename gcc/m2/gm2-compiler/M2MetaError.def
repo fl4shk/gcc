@@ -1,6 +1,6 @@
 (* M2MetaError.def provides a set of high level error routines.
 
-Copyright (C) 2008-2025 Free Software Foundation, Inc.
+Copyright (C) 2008-2026 Free Software Foundation, Inc.
 Contributed by Gaius Mulley <gaius.mulley@southwales.ac.uk>.
 
 This file is part of GNU Modula-2.
@@ -43,7 +43,8 @@ FROM NameKey IMPORT Name ;
     {%1Td}    get the type of the first symbol and describe it.
     {%1Sd}    skip the type pseudonyms of the first symbol and describe it.
     {%1ua}    force no quotes after substituting the text.
-
+    {%1av}    check name for starting with a vowel and if so append n to the
+              previous word.
     {%1D}     sets the error message to where symbol 1 was declared.
               The declaration will choose the definition module, then
               implementation (or program) module.
@@ -73,7 +74,8 @@ FROM NameKey IMPORT Name ;
     {%kword}  the string word is unquoted and rendered as a keyword.
     {%C}      chain this error on the previous rooted error.
     {%R}      this error will be the root of the future chained errors.
-    {%n}      decimal number.  Not quoted.
+    {% n}     decimal number.  Not quoted.  There is no space between the
+              % and n (this has been added to hide this comment from gettext).
     {%N}      count (number), for example, 1st, 2nd, 3rd, 4th.  Not quoted.
     {%X}      push contents of the output string onto the string stack.
     {%Yname}  place contents of dictionary entry name onto the output string.
@@ -92,9 +94,9 @@ FROM NameKey IMPORT Name ;
     %}        }
     the error messages may also embed optional strings such as:
 
-    {%1a:this string is emitted if the symbol name is non null}
-    {!%1a:this string is emitted if the symbol name is null}
-    {!%1a:{%1d}}
+    {%1a:this string is emitted if the symbol name is null}
+    {!%1a:this string is emitted if the symbol name is non null}
+    {%1a:{%1d}}
            if the symbol name does not exist then print a description
            of the symbol.
     {%1atd} was incompatible with the return type of the procedure
@@ -109,7 +111,8 @@ FROM NameKey IMPORT Name ;
     describe the symbol.  If ordinary text is copied then it is not quoted.
 
    The color strings are: "filename", "quote", "error", "warning", "note",
-                          "locus", "insert", "delete", "type", "range1", range2".
+                          "locus", "insert", "delete", "type", "range1",
+                          "range2".
 *)
 
 (*

@@ -2,6 +2,8 @@
 
    The dg directives were stripped out from the generated .sarif
    to avoid confusing DejaGnu for this test.   */
+/* { dg-additional-options "-fdiagnostics-add-output=experimental-html:file=signal-1.c.sarif.html,javascript=no" } */
+/* { dg-additional-options "-fdiagnostics-add-output=sarif:file=signal-1.c.roundtrip.sarif" } */
 
 {"$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
  "version": "2.1.0",
@@ -168,16 +170,16 @@
 In function 'custom_logger':
 ../../src/gcc/testsuite/gcc.dg/analyzer/signal-1.c:13:3: warning: call to ‘fprintf’ from within signal handler [-Wanalyzer-unsafe-call-within-signal-handler]
    13 |   fprintf(stderr, "LOG: %s", msg);
-      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   'main': events 1-2
     |
     |   21 | int main(int argc, const char *argv)
-    |      |     ^~~~~
+    |      |     ^~~~
     |      |     |
     |      |     (1) entry to ‘main’
     |......
     |   25 |   signal(SIGINT, handler);
-    |      |   ~~~~~~~~~~~~~~~~~~~~~~~~
+    |      |   ~~~~~~~~~~~~~~~~~~~~~~~
     |      |   |
     |      |   (2) registering ‘handler’ as signal handler
     |
@@ -189,25 +191,33 @@ In function 'custom_logger':
     +--> 'handler': events 4-5
            |
            |   16 | static void handler(int signum)
-           |      |             ^~~~~~~~
+           |      |             ^~~~~~~
            |      |             |
            |      |             (4) entry to ‘handler’
            |   17 | {
            |   18 |   custom_logger("got signal");
-           |      |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+           |      |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~
            |      |   |
            |      |   (5) calling ‘custom_logger’ from ‘handler’
            |
            +--> 'custom_logger': events 6-7
                   |
                   |   11 | void custom_logger(const char *msg)
-                  |      |      ^~~~~~~~~~~~~~
+                  |      |      ^~~~~~~~~~~~~
                   |      |      |
                   |      |      (6) entry to ‘custom_logger’
                   |   12 | {
                   |   13 |   fprintf(stderr, "LOG: %s", msg);
-                  |      |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                  |      |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
                   |      |   |
                   |      |   (7) call to ‘fprintf’ from within signal handler
                   |
    { dg-end-multiline-output "" } */
+
+/* Use a Python script to verify various properties about the generated
+   .html file:
+   { dg-final { run-html-pytest signal-1.c.sarif "2.1.0-valid/signal-1-check-html.py" } } */
+
+/* Use a Python script to verify various properties about the *generated*
+   .sarif file:
+   { dg-final { run-sarif-pytest signal-1.c.roundtrip "2.1.0-valid/signal-1-check-sarif-roundtrip.py" } } */

@@ -1,5 +1,5 @@
 /* Chains of recurrences.
-   Copyright (C) 2003-2025 Free Software Foundation, Inc.
+   Copyright (C) 2003-2026 Free Software Foundation, Inc.
    Contributed by Sebastian Pop <pop@cri.ensmp.fr>
 
 This file is part of GCC.
@@ -53,7 +53,6 @@ chrec_fold_plus_poly_poly (enum tree_code code,
   tree left, right;
   class loop *loop0 = get_chrec_loop (poly0);
   class loop *loop1 = get_chrec_loop (poly1);
-  tree rtype = code == POINTER_PLUS_EXPR ? chrec_type (poly1) : type;
 
   gcc_assert (poly0);
   gcc_assert (poly1);
@@ -112,6 +111,7 @@ chrec_fold_plus_poly_poly (enum tree_code code,
 
   if (code == PLUS_EXPR || code == POINTER_PLUS_EXPR)
     {
+      tree rtype = code == POINTER_PLUS_EXPR ? chrec_type (poly1) : type;
       left = chrec_fold_plus
 	(type, CHREC_LEFT (poly0), CHREC_LEFT (poly1));
       right = chrec_fold_plus
@@ -1490,7 +1490,7 @@ convert_affine_scev (class loop *loop, tree type,
   new_step = *step;
   if (TYPE_PRECISION (step_type) > TYPE_PRECISION (ct) && TYPE_UNSIGNED (ct))
     {
-      tree signed_ct = build_nonstandard_integer_type (TYPE_PRECISION (ct), 0);
+      tree signed_ct = signed_type_for (ct);
       new_step = chrec_convert (signed_ct, new_step, at_stmt,
                                 use_overflow_semantics);
     }

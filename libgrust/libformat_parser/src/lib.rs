@@ -1,55 +1,129 @@
 //! FFI interface for `rustc_format_parser`
 
+use std::alloc::Layout;
+
 // what's the plan? Have a function return something that can be constructed into a vector?
 // or an iterator?
-
-use std::ffi::CStr;
-
-trait StringLeakExt {
-    fn leak<'a>(self) -> &'a mut str;
-}
-
-impl StringLeakExt for String {
-    fn leak<'a>(self) -> &'a mut str {
-        Box::leak(self.into_boxed_str())
-    }
-}
 
 trait IntoFFI<T> {
     fn into_ffi(self) -> T;
 }
 
-impl<T> IntoFFI<*const T> for Option<T>
-where
-    T: Sized,
-{
-    fn into_ffi(self) -> *const T {
-        match self.as_ref() {
-            None => std::ptr::null(),
-            Some(r) => r as *const T,
-        }
-    }
-}
-
 // FIXME: Make an ffi module in a separate file
 // FIXME: Remember to leak the boxed type somehow
 // FIXME: How to encode the Option type? As a pointer? Option<T> -> Option<&T> -> *const T could work maybe?
-mod ffi {
+pub mod ffi {
     use super::IntoFFI;
+    use std::marker::PhantomData;
+    use std::mem::MaybeUninit;
+
+    #[repr(C)]
+    pub struct FFIVec<T> {
+        data: *mut T,
+        len: usize,
+        cap: usize
+    }
+
+    impl<T> IntoFFI<FFIVec<T>> for Vec<T> {
+        fn into_ffi(mut self) -> FFIVec<T> {
+            let ret = FFIVec {
+                data: self.as_mut_ptr(),
+                len: self.len(),
+                cap: self.capacity()
+            };
+            self.leak();
+            ret
+        }
+    }
+
+    impl<T> Drop for FFIVec<T> {
+        fn drop(&mut self) {
+            unsafe {
+                Vec::from_raw_parts(self.data, self.len, self.cap);
+            }
+        }
+    }
+
+    impl<T> FFIVec<T> {
+        fn with_vec_ref<R, F: for<'a> FnOnce(&'a Vec<T>) -> R>(
+            &self, f: F
+        ) -> R {
+            let v = unsafe {
+                Vec::from_raw_parts(self.data, self.len, self.cap)
+            };
+            let ret = f(&v);
+            v.leak();
+            ret
+        }
+
+        // currently unused
+        // may be nice to have later, though
+        #[allow(unused)]
+        fn with_vec_mut_ref<R, F: for<'a> FnOnce(&'a mut Vec<T>) -> R>(
+            &mut self, f: F
+        ) -> R {
+            let mut v = unsafe {
+                Vec::from_raw_parts(self.data, self.len, self.cap)
+            };
+            let ret = f(&mut v);
+            self.data = v.as_mut_ptr();
+            self.len = v.len();
+            self.cap = v.capacity();
+            v.leak();
+            ret
+        }
+    }
+
+    impl<T> Clone for FFIVec<T>
+    where
+        T: Clone
+    {
+        fn clone(&self) -> FFIVec<T> {
+            self.with_vec_ref(|v| v.clone().into_ffi())
+        }
+    }
+
+    // https://github.com/rust-lang/rfcs/blob/master/text/2195-really-tagged-unions.md
+    #[repr(u8)]
+    #[derive(Copy, Clone, PartialEq, Eq)]
+    pub enum FFIOpt<T> {
+        Some(T),
+        None
+    }
+
+    impl<T> IntoFFI<FFIOpt<T>> for Option<T> {
+        fn into_ffi(self) -> FFIOpt<T> {
+            match self {
+                Some(v) => FFIOpt::Some(v),
+                None => FFIOpt::None
+            }
+        }
+    }
 
     // FIXME: We need to ensure we deal with memory properly - whether it's owned by the C++ side or the Rust side
     #[derive(Copy, Clone, PartialEq, Eq, Debug)]
     #[repr(C)]
-    pub struct RustHamster {
+    pub struct RustHamster<'a> {
         ptr: *const u8,
         len: usize,
+        phantom: PhantomData<&'a u8>
     }
 
-    impl<'a> From<&'a str> for RustHamster {
-        fn from(s: &'a str) -> RustHamster {
+    impl<'a> IntoFFI<RustHamster<'a>> for &'a str {
+        fn into_ffi(self) -> RustHamster<'a> {
             RustHamster {
-                ptr: s.as_ptr(),
-                len: s.len(),
+                ptr: self.as_ptr(),
+                len: self.len(),
+                phantom: PhantomData,
+            }
+        }
+    }
+
+    impl<'a> RustHamster<'a> {
+        pub fn as_str(&self) -> &'a str {
+            unsafe {
+                let slice: &'a [u8] = std::slice::from_raw_parts(self.ptr, self.len);
+                std::str::from_utf8_unchecked(slice)
             }
         }
     }
@@ -89,26 +163,22 @@ mod ffi {
 
     // TODO: Not needed for now?
     // /// The type of format string that we are parsing.
-    // #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-    // #[repr(C)]
-    // pub enum ParseMode {
-    //     /// A normal format string as per `format_args!`.
-    //     Format,
-    //     /// An inline assembly template string for `asm!`.
-    //     InlineAsm,
-    // }
-
-    #[derive(Copy, Clone)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
     #[repr(C)]
-    struct InnerOffset(usize);
+    pub enum ParseMode {
+        /// A normal format string as per `format_args!`.
+        Format = 0,
+        /// An inline assembly template string for `asm!`.
+        InlineAsm,
+    }
 
     /// A piece is a portion of the format string which represents the next part
     /// to emit. These are emitted as a stream by the `Parser` class.
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Clone)]
     #[repr(C)]
     pub enum Piece<'a> {
         /// A literal string which should directly be emitted
-        String(RustHamster),
+        String(RustHamster<'a>),
         /// This describes that formatting should process the next argument (as
         /// specified inside) for emission.
         // do we need a pointer here? we're doing big cloning anyway
@@ -116,7 +186,7 @@ mod ffi {
     }
 
     /// Representation of an argument specification.
-    #[derive(Copy, Clone, Debug, PartialEq)]
+    #[derive(Clone)]
     #[repr(C)]
     pub struct Argument<'a> {
         /// Where to find this argument
@@ -129,37 +199,37 @@ mod ffi {
     }
 
     /// Specification for the formatting of an argument in the format string.
-    #[derive(Copy, Clone, Debug, PartialEq)]
+    #[derive(Clone)]
     #[repr(C)]
     pub struct FormatSpec<'a> {
         /// Optionally specified character to fill alignment with.
-        pub fill: Option<char>,
+        pub fill: FFIOpt<char>,
         /// Span of the optionally specified fill character.
-        pub fill_span: *const InnerSpan,
+        pub fill_span: FFIOpt<InnerSpan>,
         /// Optionally specified alignment.
         pub align: Alignment,
         /// The `+` or `-` flag.
-        pub sign: *const Sign,
+        pub sign: FFIOpt<Sign>,
         /// The `#` flag.
         pub alternate: bool,
         /// The `0` flag.
         pub zero_pad: bool,
         /// The `x` or `X` flag. (Only for `Debug`.)
-        pub debug_hex: *const DebugHex,
+        pub debug_hex: FFIOpt<DebugHex>,
         /// The integer precision to use.
         pub precision: Count<'a>,
         /// The span of the precision formatting flag (for diagnostics).
-        pub precision_span: *const InnerSpan,
+        pub precision_span: FFIOpt<InnerSpan>,
         /// The string width requested for the resulting format.
         pub width: Count<'a>,
         /// The span of the width formatting flag (for diagnostics).
-        pub width_span: *const InnerSpan,
+        pub width_span: FFIOpt<InnerSpan>,
         /// The descriptor string representing the name of the format desired for
         /// this argument, this can be empty or any number of characters, although
         /// it is required to be one word.
-        pub ty: &'a str,
+        pub ty: RustHamster<'a>,
         /// The span of the descriptor string (for diagnostics).
-        pub ty_span: *const InnerSpan,
+        pub ty_span: FFIOpt<InnerSpan>,
     }
 
     /// Enum describing where an argument for a format can be located.
@@ -171,7 +241,7 @@ mod ffi {
         /// The argument is located at a specific index given in the format,
         ArgumentIs(usize),
         /// The argument has a name.
-        ArgumentNamed(&'a str),
+        ArgumentNamed(RustHamster<'a>),
     }
 
     /// Enum of alignments which are supported.
@@ -216,7 +286,7 @@ mod ffi {
         /// The count is specified explicitly.
         CountIs(usize),
         /// The count is specified by the argument with the given name.
-        CountIsName(&'a str, InnerSpan),
+        CountIsName(RustHamster<'a>, InnerSpan),
         /// The count is specified by the argument at the given index.
         CountIsParam(usize),
         /// The count is specified by a star (like in `{:.*}`) that refers to the argument at the given index.
@@ -228,7 +298,7 @@ mod ffi {
     impl<'a> From<generic_format_parser::Piece<'a>> for Piece<'a> {
         fn from(old: generic_format_parser::Piece<'a>) -> Self {
             match old {
-                generic_format_parser::Piece::String(x) => Piece::String(x.into()),
+                generic_format_parser::Piece::String(x) => Piece::String(x.into_ffi()),
                 generic_format_parser::Piece::NextArgument(x) => {
                     // FIXME: This is problematic - if we do this, then we probably run into the issue that the Box
                     // is freed at the end of the call to collect_pieces. if we just .leak() it, then we have
@@ -262,7 +332,7 @@ mod ffi {
                 }
                 generic_format_parser::Position::ArgumentIs(x) => Position::ArgumentIs(x.into()),
                 generic_format_parser::Position::ArgumentNamed(x) => {
-                    Position::ArgumentNamed(x.into())
+                    Position::ArgumentNamed(x.into_ffi())
                 }
             }
         }
@@ -280,7 +350,7 @@ mod ffi {
     impl<'a> From<generic_format_parser::FormatSpec<'a>> for FormatSpec<'a> {
         fn from(old: generic_format_parser::FormatSpec<'a>) -> Self {
             FormatSpec {
-                fill: old.fill,
+                fill: old.fill.into_ffi(),
                 fill_span: old.fill_span.map(Into::into).into_ffi(),
                 align: old.align.into(),
                 sign: old.sign.map(Into::into).into_ffi(),
@@ -291,7 +361,7 @@ mod ffi {
                 precision_span: old.precision_span.map(Into::into).into_ffi(),
                 width: old.width.into(),
                 width_span: old.width_span.map(Into::into).into_ffi(),
-                ty: old.ty,
+                ty: old.ty.into_ffi(),
                 ty_span: old.ty_span.map(Into::into).into_ffi(),
             }
         }
@@ -310,7 +380,7 @@ mod ffi {
         fn from(old: generic_format_parser::Count<'a>) -> Self {
             match old {
                 generic_format_parser::Count::CountIs(x) => Count::CountIs(x),
-                generic_format_parser::Count::CountIsName(x, y) => Count::CountIsName(x, y.into()),
+                generic_format_parser::Count::CountIsName(x, y) => Count::CountIsName(x.into_ffi(), y.into()),
                 generic_format_parser::Count::CountIsParam(x) => Count::CountIsParam(x),
                 generic_format_parser::Count::CountIsStar(x) => Count::CountIsStar(x),
                 generic_format_parser::Count::CountImplied => Count::CountImplied,
@@ -341,113 +411,85 @@ mod ffi {
 
 // FIXME: Rename?
 pub mod rust {
-    use generic_format_parser::{ParseMode, Parser, Piece};
-
+    use crate::ffi::ParseMode;
+    use generic_format_parser::{Parser, Piece};
     pub fn collect_pieces(
         input: &str,
         style: Option<usize>,
         snippet: Option<String>,
         append_newline: bool,
+        parse_mode: ParseMode,
     ) -> Vec<Piece<'_>> {
-        let parser = Parser::new(input, style, snippet, append_newline, ParseMode::Format);
-
+        let converted_parse_mode = match parse_mode {
+            ParseMode::Format => generic_format_parser::ParseMode::Format,
+            ParseMode::InlineAsm => generic_format_parser::ParseMode::InlineAsm,
+        };
+        let parser = Parser::new(input, style, snippet, append_newline, converted_parse_mode);
         parser.into_iter().collect()
     }
 }
 
 // TODO: Should we instead make an FFIVector struct?
-#[repr(C)]
-pub struct PieceSlice {
-    base_ptr: *mut ffi::Piece<'static /* FIXME: That's wrong */>,
-    len: usize,
-    cap: usize,
-}
-
-#[repr(C)]
-// FIXME: we should probably use FFIString here
-pub struct RustString {
-    ptr: *const u8,
-    len: usize,
-    cap: usize,
-}
-
-#[repr(C)]
-pub struct FormatArgsHandle(PieceSlice, RustString);
+type PieceVec<'a> = ffi::FFIVec<ffi::Piece<'a>>;
 
 #[no_mangle]
-pub extern "C" fn collect_pieces(
-    input: *const libc::c_char,
+pub extern "C" fn collect_pieces<'a>(
+    input: ffi::RustHamster<'a>,
     append_newline: bool,
-) -> FormatArgsHandle {
-    // FIXME: Add comment
-    let str = unsafe { CStr::from_ptr(input) };
-    let str = str.to_str().unwrap().to_owned();
-
-    // we are never going to free this string here (we leak it later on), so we can extend its lifetime
-    // to send it across an FFI boundary.
-    // FIXME: Is that correct?
-    let s = &str;
-    let s = unsafe { std::mem::transmute::<&'_ str, &'static str>(s) };
-
+    parse_mode: crate::ffi::ParseMode,
+) -> PieceVec<'a> {
     // FIXME: No unwrap
-    let pieces: Vec<ffi::Piece<'_>> = rust::collect_pieces(s, None, None, append_newline)
-        .into_iter()
-        .map(Into::into)
-        .collect();
+    let pieces: Vec<ffi::Piece<'_>> =
+        rust::collect_pieces(input.as_str(), None, None, append_newline, parse_mode)
+            .into_iter()
+            .map(Into::into)
+            .collect();
 
-    let piece_slice = PieceSlice {
-        len: pieces.len(),
-        cap: pieces.capacity(),
-        base_ptr: pieces.leak().as_mut_ptr(),
-    };
-    let rust_string = RustString {
-        len: str.len(),
-        cap: str.capacity(),
-        ptr: str.leak().as_ptr(),
-    };
-
-    FormatArgsHandle(piece_slice, rust_string)
+    pieces.into_ffi()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn destroy_pieces(FormatArgsHandle(piece_slice, s): FormatArgsHandle) {
-    let PieceSlice { base_ptr, len, cap } = piece_slice;
-    drop(Vec::from_raw_parts(base_ptr, len, cap));
+pub extern "C" fn clone_pieces<'a, 'b>(
+    piece_vec: &'a PieceVec<'b>
+) -> PieceVec<'b> {
+    piece_vec.clone()
+}
 
-    let RustString { ptr, len, cap } = s;
-    drop(String::from_raw_parts(ptr as *mut u8, len, cap));
+// we need Layout::repeat
+// function signature is a bit different, so call it repeat_x
+trait LayoutExt {
+    fn repeat_x(&self, n: usize) -> Layout;
+}
+
+impl LayoutExt for Layout {
+    fn repeat_x(&self, n: usize) -> Layout {
+        let elem = self.pad_to_align();
+        let total_size = elem.size().checked_mul(n).unwrap();
+        Layout::from_size_align(total_size, elem.align()).unwrap()
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn clone_pieces(
-    FormatArgsHandle(piece_slice, s): &FormatArgsHandle,
-) -> FormatArgsHandle {
-    let PieceSlice { base_ptr, len, cap } = *piece_slice;
+pub unsafe extern "C" fn rust_ffi_alloc(
+    count: usize, elem_size: usize, align: usize
+) -> *mut u8 {
+    unsafe {
+        std::alloc::alloc(
+            Layout::from_size_align_unchecked(elem_size, align)
+                .repeat_x(count)
+        )
+    }
+}
 
-    let v = unsafe { Vec::from_raw_parts(base_ptr, len, cap) };
-    let cloned_v = v.clone();
-
-    // FIXME: Add documentation
-    v.leak();
-
-    let piece_slice = PieceSlice {
-        len: cloned_v.len(),
-        cap: cloned_v.capacity(),
-        base_ptr: cloned_v.leak().as_mut_ptr(),
-    };
-
-    let RustString { ptr, len, cap } = *s;
-    let s = unsafe { String::from_raw_parts(ptr as *mut u8, len, cap) };
-    let cloned_s = s.clone();
-
-    // FIXME: Documentation
-    s.leak();
-
-    let rust_string = RustString {
-        len: cloned_s.len(),
-        cap: cloned_s.capacity(),
-        ptr: cloned_s.leak().as_ptr(),
-    };
-
-    FormatArgsHandle(piece_slice, rust_string)
+#[no_mangle]
+pub unsafe extern "C" fn rust_ffi_dealloc(
+    data: *mut u8, count: usize, elem_size: usize, align: usize
+) {
+    unsafe {
+        std::alloc::dealloc(
+            data,
+            Layout::from_size_align_unchecked(elem_size, align)
+                .repeat_x(count)
+        )
+    }
 }

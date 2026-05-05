@@ -47,6 +47,10 @@ struct Term
 /** Variance constraint of a type parameter. */
 struct Constraint
 {
+  Constraint (SolutionIndex target_index, Term *term)
+    : target_index (target_index), term (term)
+  {}
+
   SolutionIndex target_index;
   Term *term;
 };
@@ -168,6 +172,13 @@ public:
   {
     // TODO
   }
+
+  void visit (OpaqueType &type) override {}
+
+  void visit (TyTy::ConstParamType &) override {}
+  void visit (TyTy::ConstValueType &) override {}
+  void visit (TyTy::ConstInferType &) override {}
+  void visit (TyTy::ConstErrorType &) override {}
 };
 
 /** Per crate context for generic type variance analysis. */
@@ -201,10 +212,9 @@ public: // Module internal API
 
   std::vector<Variance> query_generic_variance (const ADTType &type);
 
-  std::vector<size_t> query_field_regions (const ADTType *parent,
-					   size_t variant_index,
-					   size_t field_index,
-					   const FreeRegions &parent_regions);
+  FreeRegions query_field_regions (const ADTType *parent, size_t variant_index,
+				   size_t field_index,
+				   const FreeRegions &parent_regions);
 
   std::vector<Region> query_type_regions (BaseType *base);
 
@@ -309,7 +319,7 @@ class FieldVisitorCtx : public VarianceVisitorCtx<Variance>
 public:
   using Visitor = VisitorBase<Variance>;
 
-  std::vector<size_t> collect_regions (BaseType &ty);
+  FreeRegions collect_regions (BaseType &ty);
 
   FieldVisitorCtx (GenericTyPerCrateCtx &ctx, const SubstitutionRef &subst,
 		   const FreeRegions &parent_regions)
@@ -332,7 +342,7 @@ public:
 private:
   GenericTyPerCrateCtx &ctx;
   const SubstitutionRef &subst;
-  std::vector<size_t> regions;
+  FreeRegions regions;
   FreeRegions parent_regions;
   std::vector<size_t> type_param_ranges;
 };

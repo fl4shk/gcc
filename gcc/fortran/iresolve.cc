@@ -1,5 +1,5 @@
 /* Intrinsic function resolution.
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
    Contributed by Andy Vaught & Katherine Holcomb
 
 This file is part of GCC.
@@ -101,6 +101,25 @@ check_charlen_present (gfc_expr *source)
       if (source->ts.u.cl->length == NULL)
 	gfc_internal_error ("check_charlen_present(): length not set");
     }
+}
+
+static gfc_intrinsic_sym *
+copy_intrinsic_sym (const gfc_intrinsic_sym *src)
+{
+  gfc_intrinsic_sym *copy = XCNEW (gfc_intrinsic_sym);
+  gfc_intrinsic_arg *head = NULL;
+  gfc_intrinsic_arg **tail = &head;
+
+  *copy = *src;
+  for (const gfc_intrinsic_arg *arg = src->formal; arg; arg = arg->next)
+    {
+      *tail = XCNEW (gfc_intrinsic_arg);
+      **tail = *arg;
+      (*tail)->next = NULL;
+      tail = &(*tail)->next;
+    }
+  copy->formal = head;
+  return copy;
 }
 
 /* Helper function for resolving the "mask" argument.  */
@@ -729,6 +748,25 @@ gfc_resolve_cosh (gfc_expr *f, gfc_expr *x)
   f->value.function.name
     = gfc_get_string ("__cosh_%c%d", gfc_type_letter (x->ts.type),
 		      gfc_type_abi_kind (&x->ts));
+}
+
+
+void
+gfc_resolve_coshape (gfc_expr *f, gfc_expr *array, gfc_expr *kind)
+{
+  f->ts.type = BT_INTEGER;
+  if (kind)
+    f->ts.kind = mpz_get_si (kind->value.integer);
+  else
+    f->ts.kind = gfc_default_integer_kind;
+
+  f->value.function.name
+    = gfc_get_string ("__coshape_%c%d", gfc_type_letter (array->ts.type),
+		      gfc_type_abi_kind (&array->ts));
+  f->rank = 1;
+  f->corank = 0;
+  f->shape = gfc_get_shape (1);
+  mpz_init_set_si (f->shape[0], array->corank);
 }
 
 
@@ -2408,6 +2446,220 @@ gfc_resolve_realpart (gfc_expr *f, gfc_expr *a)
 }
 
 
+/* Generate a wrapper subroutine for the operation so that the library REDUCE
+   function can use pointer arithmetic for OPERATION and not be dependent on
+   knowledge of its type.  */
+static gfc_symtree *
+generate_reduce_op_wrapper (gfc_expr *op)
+{
+  gfc_symbol *operation = op->symtree->n.sym;
+  gfc_symbol *wrapper, *a, *b, *c;
+  gfc_symtree *st;
+  char tname[2 * GFC_MAX_SYMBOL_LEN + 2];
+  char *name;
+  gfc_namespace *ns;
+  gfc_expr *e;
+
+  /* Find the top-level namespace.  */
+  for (ns = gfc_current_ns; ns; ns = ns->parent)
+    if (!ns->parent)
+      break;
+
+  sprintf (tname, "%s_%s", operation->name,
+	   ns->proc_name ? ns->proc_name->name : "noname");
+  name = xasprintf ("__reduce_wrapper_%s", tname);
+
+  gfc_find_sym_tree (name, ns, 0, &st);
+
+  if (st && !strcmp (name, st->name))
+    {
+      free (name);
+      return st;
+    }
+
+  /* Create the wrapper namespace and contain it in 'ns'.  */
+  gfc_namespace *sub_ns = gfc_get_namespace (ns, 0);
+  sub_ns->sibling = ns->contained;
+  ns->contained = sub_ns;
+  sub_ns->resolved = 1;
+
+  /* Set up procedure symbol.  */
+  gfc_get_symbol (name, ns, &wrapper);
+  sub_ns->proc_name = wrapper;
+  wrapper->attr.flavor = FL_PROCEDURE;
+  wrapper->attr.subroutine = 1;
+  wrapper->attr.artificial = 1;
+  wrapper->attr.if_source = IFSRC_DECL;
+  if (ns->proc_name->attr.flavor == FL_MODULE)
+      wrapper->module = ns->proc_name->name;
+  gfc_set_sym_referenced (wrapper);
+
+  /* Set up formal argument for the argument 'a'.  */
+  gfc_get_symbol ("a", sub_ns, &a);
+  a->ts = operation->ts;
+  a->attr.flavor = FL_VARIABLE;
+  a->attr.dummy = 1;
+  a->attr.artificial = 1;
+  a->attr.intent = INTENT_IN;
+  wrapper->formal = gfc_get_formal_arglist ();
+  wrapper->formal->sym = a;
+  gfc_set_sym_referenced (a);
+
+  /* Set up formal argument for the argument 'b'.  This is optional.  When
+     present, the wrapped function is called, otherwise 'a' is assigned
+     to 'c'.  This way, deep copies are effected in the library.  */
+  gfc_get_symbol ("b", sub_ns, &b);
+  b->ts = operation->ts;
+  b->attr.flavor = FL_VARIABLE;
+  b->attr.dummy = 1;
+  b->attr.optional= 1;
+  b->attr.artificial = 1;
+  b->attr.intent = INTENT_IN;
+  wrapper->formal->next = gfc_get_formal_arglist ();
+  wrapper->formal->next->sym = b;
+  gfc_set_sym_referenced (b);
+
+  /* Set up formal argument for the argument 'c'.  */
+  gfc_get_symbol ("c", sub_ns, &c);
+  c->ts = operation->ts;
+  c->attr.flavor = FL_VARIABLE;
+  c->attr.dummy = 1;
+  c->attr.artificial = 1;
+  c->attr.intent = INTENT_INOUT;
+  wrapper->formal->next->next = gfc_get_formal_arglist ();
+  wrapper->formal->next->next->sym = c;
+  gfc_set_sym_referenced (c);
+
+/* The only code is:
+		if (present (b))
+		    c = operation (a, b)
+		else
+		    c = a
+		endif
+  A call with 'b' missing provides a convenient way for the library to do
+  an intrinsic assignment instead of a call to memcpy and, where allocatable
+  components are present, a deep copy.
+
+  Code for if (present (b))  */
+  sub_ns->code = gfc_get_code (EXEC_IF);
+  gfc_code *if_block = sub_ns->code;
+  if_block->block = gfc_get_code (EXEC_IF);
+  if_block->block->expr1 = gfc_get_expr ();
+  e = if_block->block->expr1;
+  e->expr_type = EXPR_FUNCTION;
+  e->where = gfc_current_locus;
+  gfc_get_sym_tree ("present", sub_ns, &e->symtree, false);
+  e->symtree->n.sym->attr.flavor = FL_PROCEDURE;
+  e->symtree->n.sym->attr.intrinsic = 1;
+  e->ts.type = BT_LOGICAL;
+  e->ts.kind = gfc_default_logical_kind;
+  e->value.function.isym = gfc_intrinsic_function_by_id (GFC_ISYM_PRESENT);
+  e->value.function.actual = gfc_get_actual_arglist ();
+  e->value.function.actual->expr = gfc_lval_expr_from_sym (b);
+
+/* Code for c = operation (a, b)  */
+  if_block->block->next = gfc_get_code (EXEC_ASSIGN);
+  if_block->block->next->expr1 = gfc_lval_expr_from_sym (c);
+  if_block->block->next->expr2 = gfc_get_expr ();
+  e = if_block->block->next->expr2;
+  e->expr_type = EXPR_FUNCTION;
+  e->where = gfc_current_locus;
+  if_block->block->next->expr2->ts = operation->ts;
+  gfc_get_sym_tree (operation->name, ns, &e->symtree, false);
+  e->value.function.esym = if_block->block->next->expr2->symtree->n.sym;
+  e->value.function.actual = gfc_get_actual_arglist ();
+  e->value.function.actual->expr = gfc_lval_expr_from_sym (a);
+  e->value.function.actual->next = gfc_get_actual_arglist ();
+  e->value.function.actual->next->expr = gfc_lval_expr_from_sym (b);
+
+  if_block->block->block = gfc_get_code (EXEC_IF);
+  if_block->block->block->next = gfc_get_code (EXEC_ASSIGN);
+  if_block->block->block->next->expr1 = gfc_lval_expr_from_sym (c);
+  if_block->block->block->next->expr2 = gfc_lval_expr_from_sym (a);
+
+  /* It is unexpected to have some symbols added at resolution.  Commit the
+     changes in order to keep a clean state.  */
+  gfc_commit_symbol (if_block->block->expr1->symtree->n.sym);
+  gfc_commit_symbol (wrapper);
+  gfc_commit_symbol (a);
+  gfc_commit_symbol (b);
+  gfc_commit_symbol (c);
+
+  gfc_find_sym_tree (name, ns, 0, &st);
+  free (name);
+
+  return st;
+}
+
+void
+gfc_resolve_reduce (gfc_expr *f, gfc_expr *array,
+		     gfc_expr *operation,
+		     gfc_expr *dim,
+		     gfc_expr *mask,
+		     gfc_expr *identity ATTRIBUTE_UNUSED,
+		     gfc_expr *ordered ATTRIBUTE_UNUSED)
+{
+  gfc_symtree *wrapper_symtree;
+  gfc_typespec ts;
+
+  gfc_resolve_expr (array);
+  if (array->ts.type == BT_CHARACTER && array->ref)
+    gfc_resolve_substring_charlen (array);
+
+  f->ts = array->ts;
+
+  /* Replace 'operation' with its subroutine wrapper so that pointers may be
+     used throughout the library function.  */
+  wrapper_symtree = generate_reduce_op_wrapper (operation);
+  gcc_assert (wrapper_symtree && wrapper_symtree->n.sym);
+  operation->symtree = wrapper_symtree;
+  operation->ts = operation->symtree->n.sym->ts;
+
+  /* The scalar library function converts the scalar result to a dimension
+     zero descriptor and then returns the data after the call.  */
+  if (f->ts.type == BT_CHARACTER)
+    {
+      if (dim && array->rank > 1)
+	{
+	  f->value.function.name = gfc_get_string (PREFIX ("reduce_c"));
+	  f->rank = array->rank - 1;
+	}
+      else
+	{
+	  f->value.function.name = gfc_get_string (PREFIX ("reduce_scalar_c"));
+	  f->rank = 0;
+	}
+    }
+  else
+    {
+      if (dim && array->rank > 1)
+	{
+	  f->value.function.name = gfc_get_string (PREFIX ("reduce"));
+	  f->rank = array->rank - 1;
+	}
+      else
+	{
+	  f->value.function.name = gfc_get_string (PREFIX ("reduce_scalar"));
+	  f->rank = 0;
+	}
+    }
+
+  if (dim)
+    {
+      ts = dim->ts;
+      ts.kind = 4;
+      gfc_convert_type_warn (dim, &ts, 1, 0);
+    }
+
+  if (mask)
+    {
+      ts = mask->ts;
+      ts.kind = 4;
+      gfc_convert_type_warn (mask, &ts, 1, 0);
+    }
+}
+
+
 void
 gfc_resolve_rename (gfc_expr *f, gfc_expr *p1 ATTRIBUTE_UNUSED,
 		    gfc_expr *p2 ATTRIBUTE_UNUSED)
@@ -2725,7 +2977,11 @@ gfc_resolve_spread (gfc_expr *f, gfc_expr *source, gfc_expr *dim,
     gfc_resolve_substring_charlen (source);
 
   if (source->ts.type == BT_CHARACTER)
-    check_charlen_present (source);
+    {
+      check_charlen_present (source);
+      f->value.function.isym = copy_intrinsic_sym (f->value.function.isym);
+      f->value.function.isym->formal->ts = source->ts;
+    }
 
   f->ts = source->ts;
   f->rank = source->rank + 1;
@@ -2786,30 +3042,28 @@ gfc_resolve_sqrt (gfc_expr *f, gfc_expr *x)
 /* Resolve the g77 compatibility function STAT AND FSTAT.  */
 
 void
-gfc_resolve_stat (gfc_expr *f, gfc_expr *n ATTRIBUTE_UNUSED,
-		  gfc_expr *a ATTRIBUTE_UNUSED)
+gfc_resolve_stat (gfc_expr *f, gfc_expr *n ATTRIBUTE_UNUSED, gfc_expr *a)
 {
   f->ts.type = BT_INTEGER;
-  f->ts.kind = gfc_default_integer_kind;
+  f->ts.kind = a->ts.kind;
   f->value.function.name = gfc_get_string (PREFIX ("stat_i%d"), f->ts.kind);
 }
 
 
 void
-gfc_resolve_lstat (gfc_expr *f, gfc_expr *n ATTRIBUTE_UNUSED,
-		   gfc_expr *a ATTRIBUTE_UNUSED)
+gfc_resolve_lstat (gfc_expr *f, gfc_expr *n ATTRIBUTE_UNUSED, gfc_expr *a)
 {
   f->ts.type = BT_INTEGER;
-  f->ts.kind = gfc_default_integer_kind;
+  f->ts.kind = a->ts.kind;
   f->value.function.name = gfc_get_string (PREFIX ("lstat_i%d"), f->ts.kind);
 }
 
 
 void
-gfc_resolve_fstat (gfc_expr *f, gfc_expr *n, gfc_expr *a ATTRIBUTE_UNUSED)
+gfc_resolve_fstat (gfc_expr *f, gfc_expr *n, gfc_expr *a)
 {
   f->ts.type = BT_INTEGER;
-  f->ts.kind = gfc_default_integer_kind;
+  f->ts.kind = a->ts.kind;
   if (n->ts.kind != f->ts.kind)
     gfc_convert_type (n, &f->ts, 2);
 
@@ -2995,17 +3249,28 @@ gfc_resolve_get_team (gfc_expr *f, gfc_expr *level ATTRIBUTE_UNUSED)
 {
   static char get_team[] = "_gfortran_caf_get_team";
   f->rank = 0;
-  f->ts.type = BT_INTEGER;
-  f->ts.kind = gfc_default_integer_kind;
+  f->ts.type = BT_DERIVED;
+  gfc_find_symbol ("team_type", gfc_current_ns, 1, &f->ts.u.derived);
+  if (!f->ts.u.derived
+      || f->ts.u.derived->from_intmod != INTMOD_ISO_FORTRAN_ENV)
+    {
+      gfc_error (
+	"GET_TEAM at %L needs USE of the intrinsic module ISO_FORTRAN_ENV "
+	"to define its result type TEAM_TYPE",
+	&f->where);
+      f->ts.type = BT_UNKNOWN;
+    }
   f->value.function.name = get_team;
-}
 
+  /* No requirements to resolve for level argument now.  */
+}
 
 /* Resolve image_index (...).  */
 
 void
 gfc_resolve_image_index (gfc_expr *f, gfc_expr *array ATTRIBUTE_UNUSED,
-			 gfc_expr *sub ATTRIBUTE_UNUSED)
+			 gfc_expr *sub ATTRIBUTE_UNUSED,
+			 gfc_expr *team_or_team_number ATTRIBUTE_UNUSED)
 {
   static char image_index[] = "__image_index";
   f->ts.type = BT_INTEGER;
@@ -3034,31 +3299,46 @@ gfc_resolve_stopped_images (gfc_expr *f, gfc_expr *team ATTRIBUTE_UNUSED,
 /* Resolve team_number (team).  */
 
 void
-gfc_resolve_team_number (gfc_expr *f, gfc_expr *team ATTRIBUTE_UNUSED)
+gfc_resolve_team_number (gfc_expr *f, gfc_expr *team)
 {
   static char team_number[] = "_gfortran_caf_team_number";
   f->rank = 0;
   f->ts.type = BT_INTEGER;
   f->ts.kind = gfc_default_integer_kind;
   f->value.function.name = team_number;
+
+  if (team)
+    gfc_resolve_expr (team);
 }
 
-
 void
-gfc_resolve_this_image (gfc_expr *f, gfc_expr *array, gfc_expr *dim,
-			gfc_expr *distance ATTRIBUTE_UNUSED)
+gfc_resolve_this_image (gfc_expr *f, gfc_expr *coarray, gfc_expr *dim,
+			gfc_expr *team)
 {
   static char this_image[] = "__this_image";
-  if (array && gfc_is_coarray (array))
-    resolve_bound (f, array, dim, NULL, "__this_image", true);
+  if (coarray && dim)
+    resolve_bound (f, coarray, dim, NULL, this_image, true);
+  else if (coarray)
+    {
+      f->ts.type = BT_INTEGER;
+      f->ts.kind = gfc_default_integer_kind;
+      f->value.function.name = this_image;
+      if (f->shape && f->rank != 1)
+	gfc_free_shape (&f->shape, f->rank);
+      f->rank = 1;
+      f->shape = gfc_get_shape (1);
+      mpz_init_set_ui (f->shape[0], coarray->corank);
+    }
   else
     {
       f->ts.type = BT_INTEGER;
       f->ts.kind = gfc_default_integer_kind;
       f->value.function.name = this_image;
     }
-}
 
+  if (team)
+    gfc_resolve_expr (team);
+}
 
 void
 gfc_resolve_time (gfc_expr *f)
@@ -3195,13 +3475,12 @@ gfc_resolve_trim (gfc_expr *f, gfc_expr *string)
   f->value.function.name = gfc_get_string ("__trim_%d", string->ts.kind);
 }
 
-
-/* Resolve the degree trigonometric functions.  This amounts to setting
+/* Resolve the trigonometric functions.  This amounts to setting
    the function return type-spec from its argument and building a
    library function names of the form _gfortran_sind_r4.  */
 
 void
-gfc_resolve_trigd (gfc_expr *f, gfc_expr *x)
+gfc_resolve_trig (gfc_expr *f, gfc_expr *x)
 {
   f->ts = x->ts;
   f->value.function.name
@@ -3210,9 +3489,8 @@ gfc_resolve_trigd (gfc_expr *f, gfc_expr *x)
 		      gfc_type_abi_kind (&x->ts));
 }
 
-
 void
-gfc_resolve_trigd2 (gfc_expr *f, gfc_expr *y, gfc_expr *x)
+gfc_resolve_trig2 (gfc_expr *f, gfc_expr *y, gfc_expr *x)
 {
   f->ts = y->ts;
   f->value.function.name
@@ -3625,6 +3903,19 @@ gfc_resolve_sleep_sub (gfc_code *c)
   c->resolved_sym = gfc_get_intrinsic_sub_symbol (name);
 }
 
+void
+gfc_resolve_split (gfc_code *c)
+{
+  const char *name;
+  gfc_expr *string;
+
+  string = c->ext.actual->expr;
+  if (string->ts.type == BT_CHARACTER && string->ts.kind == 4)
+    name = "__split_char4";
+  else
+    name = "__split";
+  c->resolved_sym = gfc_get_intrinsic_sub_symbol (name);
+}
 
 /* G77 compatibility function srand().  */
 
@@ -3908,7 +4199,9 @@ void
 gfc_resolve_stat_sub (gfc_code *c)
 {
   const char *name;
-  name = gfc_get_string (PREFIX ("stat_i%d_sub"), gfc_default_integer_kind);
+  gfc_typespec *ts;
+  ts = &c->ext.actual->next->expr->ts;
+  name = gfc_get_string (PREFIX ("stat_i%d_sub"), ts->kind);
   c->resolved_sym = gfc_get_intrinsic_sub_symbol (name);
 }
 
@@ -3917,7 +4210,9 @@ void
 gfc_resolve_lstat_sub (gfc_code *c)
 {
   const char *name;
-  name = gfc_get_string (PREFIX ("lstat_i%d_sub"), gfc_default_integer_kind);
+  gfc_typespec *ts;
+  ts = &c->ext.actual->next->expr->ts;
+  name = gfc_get_string (PREFIX ("lstat_i%d_sub"), ts->kind);
   c->resolved_sym = gfc_get_intrinsic_sub_symbol (name);
 }
 

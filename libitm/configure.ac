@@ -1,5 +1,5 @@
 # Process this file with autoreconf to produce a configure script.
-#   Copyright (C) 2011-2025 Free Software Foundation, Inc.
+#   Copyright (C) 2011-2026 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -218,7 +218,7 @@ GCC_LINUX_FUTEX(:)
 GCC_CHECK_TLS
 
 # See what sort of export controls are available.
-LIBITM_CHECK_ATTRIBUTE_VISIBILITY
+GCC_CHECK_ATTRIBUTE_VISIBILITY
 LIBITM_CHECK_ATTRIBUTE_DLLEXPORT
 LIBITM_CHECK_ATTRIBUTE_ALIAS
 

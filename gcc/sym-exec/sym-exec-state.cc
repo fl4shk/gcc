@@ -1,7 +1,7 @@
 /* State will store states of variables for a function's single execution path.
    It will be used for bit-level symbolic execution to determine values of bits
    of function's return value and symbolic marked arguments.
-   Copyright (C) 2022-2025 Free Software Foundation, Inc.
+   Copyright (C) 2022-2026 Free Software Foundation, Inc.
    Contributed by Matevos Mehrabyan <matevosmehrabyan@gmail.com>
 
 This file is part of GCC.
@@ -265,7 +265,7 @@ state::check_args_compatibility (tree arg1, tree arg2, tree dest)
 	   || TREE_CODE (arg2) == INTEGER_CST))
     {
       if (dump_file && (dump_flags & TDF_DETAILS))
-	fprintf (dump_file, "Sym-Exec: Incompatible destination"
+	fprintf (dump_file, "Sym-Exec: Incompatible destination "
 			    "and argument sizes.\n");
 
       return false;

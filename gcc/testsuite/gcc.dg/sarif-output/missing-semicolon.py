@@ -43,7 +43,7 @@ def test_location_relationships(sarif):
     
     result = results[0]
     assert result['level'] == 'error'
-    assert result['message']['text'] == "expected ';' before '}' token"
+    assert result['message']['text'] == "expected ';' before '}}' token"
     locations = result['locations']
     assert len(locations) == 1
 
@@ -79,8 +79,10 @@ def test_location_relationships(sarif):
 
     # We expect one fix-it hint representing an insertion of ';'
     assert len(result['fixes']) == 1
-    assert len(result['fixes'][0]['artifactChanges']) == 1
-    change = result['fixes'][0]['artifactChanges'][0]
+    fix = result['fixes'][0]
+    assert fix['description']['text'] == "Insert ';'"
+    assert len(fix['artifactChanges']) == 1
+    change = fix['artifactChanges'][0]
     assert change['artifactLocation']['uri'].endswith('missing-semicolon.c')
     assert len(change['replacements']) == 1
     replacement = change['replacements'][0]

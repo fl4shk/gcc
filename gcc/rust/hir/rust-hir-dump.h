@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -80,7 +80,6 @@ private:
   void do_type (Type &);
   void do_expr (Expr &);
   void do_ifexpr (IfExpr &);
-  void do_ifletexpr (IfLetExpr &);
   void do_pathexpr (PathExpr &);
   void do_pathpattern (PathPattern &);
   void do_genericargs (GenericArgs &);
@@ -100,6 +99,8 @@ private:
   void do_structfield (StructField &);
   void do_maybenamedparam (MaybeNamedParam &);
   void do_struct (Struct &);
+  void do_matcharm (MatchArm &);
+  void do_matchcase (MatchCase &);
 
   void visit (AST::Attribute &attribute);
   virtual void visit (Lifetime &) override;
@@ -145,6 +146,8 @@ private:
   virtual void visit (FieldAccessExpr &) override;
   virtual void visit (ClosureExpr &) override;
   virtual void visit (BlockExpr &) override;
+  virtual void visit (AnonConst &) override;
+  virtual void visit (ConstBlock &) override;
   virtual void visit (ContinueExpr &) override;
   virtual void visit (BreakExpr &) override;
   virtual void visit (RangeFromToExpr &) override;
@@ -160,12 +163,13 @@ private:
   virtual void visit (WhileLetLoopExpr &) override;
   virtual void visit (IfExpr &) override;
   virtual void visit (IfExprConseqElse &) override;
-  virtual void visit (IfLetExpr &) override;
-  virtual void visit (IfLetExprConseqElse &) override;
 
   virtual void visit (MatchExpr &) override;
   virtual void visit (AwaitExpr &) override;
   virtual void visit (AsyncBlockExpr &) override;
+  virtual void visit (InlineAsm &) override;
+  virtual void visit (LlvmInlineAsm &) override;
+  virtual void visit (OffsetOf &) override;
 
   virtual void visit (TypeParam &) override;
   virtual void visit (ConstGenericParam &) override;
@@ -219,14 +223,18 @@ private:
   virtual void visit (StructPatternFieldIdent &) override;
   virtual void visit (StructPattern &) override;
 
-  virtual void visit (TupleStructItemsNoRange &) override;
-  virtual void visit (TupleStructItemsRange &) override;
+  virtual void visit (TupleStructItemsNoRest &) override;
+  virtual void visit (TupleStructItemsHasRest &) override;
   virtual void visit (TupleStructPattern &) override;
 
-  virtual void visit (TuplePatternItemsMultiple &) override;
-  virtual void visit (TuplePatternItemsRanged &) override;
+  virtual void visit (TuplePatternItemsNoRest &) override;
+  virtual void visit (TuplePatternItemsHasRest &) override;
   virtual void visit (TuplePattern &) override;
+
+  virtual void visit (SlicePatternItemsNoRest &) override;
+  virtual void visit (SlicePatternItemsHasRest &) override;
   virtual void visit (SlicePattern &) override;
+
   virtual void visit (AltPattern &) override;
 
   virtual void visit (EmptyStmt &) override;
@@ -237,7 +245,6 @@ private:
   virtual void visit (ImplTraitType &) override;
   virtual void visit (TraitObjectType &) override;
   virtual void visit (ParenthesisedType &) override;
-  virtual void visit (ImplTraitTypeOneBound &) override;
   virtual void visit (TupleType &) override;
   virtual void visit (NeverType &) override;
   virtual void visit (RawPointerType &) override;
@@ -252,7 +259,6 @@ private:
 } // namespace Rust
 
 // In the global namespace to make it easier to call from debugger
-void
-debug (Rust::HIR::FullVisitable &v);
+void debug (Rust::HIR::FullVisitable &v);
 
 #endif // !RUST_HIR_DUMP_H

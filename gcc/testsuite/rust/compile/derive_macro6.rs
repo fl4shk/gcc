@@ -1,17 +1,20 @@
+#![feature(no_core)]
+#![no_core]
+
+#![feature(lang_items)]
 #[lang = "sized"]
 pub trait Sized {}
 
+#[lang = "copy"]
 pub trait Copy {}
+
+#[lang = "clone"]
 pub trait Clone {
     fn clone(&self) -> Self;
 }
 
 #[lang = "phantom_data"]
 pub struct PhantomData<T>;
-
-pub struct AssertParamIsCopy<T: Copy> {
-    pub _field: PhantomData<T>,
-}
 
 impl Copy for i32 {}
 impl Copy for i64 {}

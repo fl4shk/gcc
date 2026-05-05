@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -23,19 +23,30 @@
 #include "rust-item.h"
 
 namespace Rust {
+
+void expand_cfg_attrs (AST::AttrVec &attrs);
+
+// forward declare
+struct ExpansionCfg;
+
 // Visitor used to maybe_strip attributes.
 class CfgStrip : public AST::DefaultASTVisitor
 {
 private:
+  bool fails_cfg_with_expand (AST::AttrVec &attrs) const;
+
 public:
   using DefaultASTVisitor::visit;
 
-  CfgStrip () {}
+  CfgStrip (const ExpansionCfg &expansion_cfg) : expansion_cfg (expansion_cfg)
+  {}
 
   /* Run the AttrVisitor on an entire crate */
   void go (AST::Crate &crate);
 
   void maybe_strip_struct_fields (std::vector<AST::StructField> &fields);
+  void maybe_strip_struct_expr_fields (
+    std::vector<std::unique_ptr<AST::StructExprField>> &fields);
   void maybe_strip_tuple_fields (std::vector<AST::TupleField> &fields);
   void maybe_strip_function_params (
     std::vector<std::unique_ptr<AST::Param>> &params);
@@ -145,7 +156,6 @@ public:
   void visit (AST::Union &union_item) override;
   void visit (AST::ConstantItem &const_item) override;
   void visit (AST::StaticItem &static_item) override;
-  void visit (AST::TraitItemConst &item) override;
   void visit (AST::TraitItemType &item) override;
   void visit (AST::Trait &trait) override;
   void visit (AST::InherentImpl &impl) override;
@@ -164,12 +174,14 @@ public:
   void visit (AST::StructPatternFieldIdentPat &field) override;
   void visit (AST::StructPatternFieldIdent &field) override;
   void visit (AST::StructPattern &pattern) override;
-  void visit (AST::TupleStructItemsNoRange &tuple_items) override;
-  void visit (AST::TupleStructItemsRange &tuple_items) override;
+  void visit (AST::TupleStructItemsNoRest &tuple_items) override;
+  void visit (AST::TupleStructItemsHasRest &tuple_items) override;
   void visit (AST::TupleStructPattern &pattern) override;
-  void visit (AST::TuplePatternItemsMultiple &tuple_items) override;
-  void visit (AST::TuplePatternItemsRanged &tuple_items) override;
+  void visit (AST::TuplePatternItemsNoRest &tuple_items) override;
+  void visit (AST::TuplePatternItemsHasRest &tuple_items) override;
   void visit (AST::GroupedPattern &pattern) override;
+  void visit (AST::SlicePatternItemsNoRest &items) override;
+  void visit (AST::SlicePatternItemsHasRest &items) override;
   void visit (AST::SlicePattern &pattern) override;
   void visit (AST::AltPattern &pattern) override;
 
@@ -190,6 +202,9 @@ public:
   {
     DefaultASTVisitor::visit (item);
   }
+
+private:
+  const ExpansionCfg &expansion_cfg;
 };
 } // namespace Rust
 

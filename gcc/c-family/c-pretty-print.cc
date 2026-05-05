@@ -1,5 +1,5 @@
 /* Subroutines common to both C and C++ pretty-printers.
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Gabriel Dos Reis <gdr@integrable-solutions.net>
 
 This file is part of GCC.
@@ -36,7 +36,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "function.h"
 #include "basic-block.h"
 #include "gimple.h"
-#include "make-unique.h"
+#include "tm.h"
 
 /* The pretty-printer code is primarily designed to closely follow
    (GNU) C and C++ grammars.  That is to be contrasted with spaghetti
@@ -45,12 +45,6 @@ along with GCC; see the file COPYING3.  If not see
    much easier to add extensions and nifty pretty-printing effects that
    takes expression or declaration contexts into account.  */
 
-
-#define pp_c_maybe_whitespace(PP)            \
-   do {                                      \
-     if ((PP)->get_padding () == pp_before)  \
-       pp_c_whitespace (PP);                 \
-   } while (0)
 
 /* literal  */
 static void pp_c_char (c_pretty_printer *, int);
@@ -640,7 +634,7 @@ c_pretty_printer::direct_abstract_declarator (tree t)
 	  add_space = true;
 	}
 
-      if (tree arr = lookup_attribute ("array", TYPE_ATTRIBUTES (t)))
+      if (tree arr = lookup_attribute ("array ", TYPE_ATTRIBUTES (t)))
 	{
 	  if (TREE_VALUE (arr))
 	    {
@@ -2858,6 +2852,9 @@ c_pretty_printer::statement (tree t)
     {
 
     case SWITCH_STMT:
+      if (dump_flags != TDF_NONE)
+	internal_error ("dump flags not handled here");
+
       pp_c_ws_string (this, "switch");
       pp_space (this);
       pp_c_left_paren (this);
@@ -2875,6 +2872,9 @@ c_pretty_printer::statement (tree t)
 	    for ( expression(opt) ; expression(opt) ; expression(opt) ) statement
 	    for ( declaration expression(opt) ; expression(opt) ) statement  */
     case WHILE_STMT:
+      if (dump_flags != TDF_NONE)
+	internal_error ("dump flags not handled here");
+
       pp_c_ws_string (this, "while");
       pp_space (this);
       pp_c_left_paren (this);
@@ -2887,6 +2887,9 @@ c_pretty_printer::statement (tree t)
       break;
 
     case DO_STMT:
+      if (dump_flags != TDF_NONE)
+	internal_error ("dump flags not handled here");
+
       pp_c_ws_string (this, "do");
       pp_newline_and_indent (this, 3);
       statement (DO_BODY (t));
@@ -2901,6 +2904,9 @@ c_pretty_printer::statement (tree t)
       break;
 
     case FOR_STMT:
+      if (dump_flags != TDF_NONE)
+	internal_error ("dump flags not handled here");
+
       pp_c_ws_string (this, "for");
       pp_space (this);
       pp_c_left_paren (this);
@@ -2929,6 +2935,9 @@ c_pretty_printer::statement (tree t)
 	    continue ;
 	    return expression(opt) ;  */
     case BREAK_STMT:
+      if (dump_flags != TDF_NONE)
+	internal_error ("dump flags not handled here");
+
       pp_string (this, "break");
       if (BREAK_NAME (t))
 	{
@@ -2940,6 +2949,9 @@ c_pretty_printer::statement (tree t)
       break;
 
     case CONTINUE_STMT:
+      if (dump_flags != TDF_NONE)
+	internal_error ("dump flags not handled here");
+
       pp_string (this, "continue");
       if (CONTINUE_NAME (t))
 	{
@@ -2953,15 +2965,16 @@ c_pretty_printer::statement (tree t)
     default:
       if (pp_needs_newline (this))
 	pp_newline_and_indent (this, 0);
-      dump_generic_node (this, t, pp_indentation (this), TDF_NONE, true);
+      dump_generic_node (this, t, pp_indentation (this), dump_flags, true);
     }
 }
 
 
 /* Initialize the PRETTY-PRINTER for handling C codes.  */
 
-c_pretty_printer::c_pretty_printer ()
+c_pretty_printer::c_pretty_printer (dump_flags_t dump_flags)
   : pretty_printer (),
+    dump_flags (dump_flags),
     offset_list (),
     flags ()
 {
@@ -2975,15 +2988,15 @@ c_pretty_printer::c_pretty_printer ()
 std::unique_ptr<pretty_printer>
 c_pretty_printer::clone () const
 {
-  return ::make_unique<c_pretty_printer> (*this);
+  return std::make_unique<c_pretty_printer> (*this);
 }
 
 /* Print the tree T in full, on file FILE.  */
 
 void
-print_c_tree (FILE *file, tree t)
+print_c_tree (FILE *file, tree t, dump_flags_t dump_flags)
 {
-  c_pretty_printer pp;
+  c_pretty_printer pp (dump_flags);
 
   pp_needs_newline (&pp) = true;
   pp.set_output_stream (file);
@@ -2996,7 +3009,7 @@ print_c_tree (FILE *file, tree t)
 DEBUG_FUNCTION void
 debug_c_tree (tree t)
 {
-  print_c_tree (stderr, t);
+  print_c_tree (stderr, t, TDF_NONE);
   fputc ('\n', stderr);
 }
 
@@ -3034,6 +3047,76 @@ pp_c_tree_decl_identifier (c_pretty_printer *pp, tree t)
     }
 
   pp_c_identifier (pp, name);
+}
+
+/* Prints "[version: VERSION]" for a versioned function decl.
+   This will only print for targets with target_version semantics.  */
+void
+pp_c_function_target_version (c_pretty_printer *pp, tree t)
+{
+  if (TARGET_HAS_FMV_TARGET_ATTRIBUTE)
+    return;
+
+  string_slice version = get_target_version (t);
+  if (!version.is_valid ())
+    return;
+
+  pp_c_whitespace (pp);
+
+  pp_c_left_bracket (pp);
+  pp_c_left_bracket (pp);
+  pp_string (pp, "target_version");
+  pp_c_left_paren (pp);
+  pp_doublequote (pp);
+  pp_string_n (pp, version.begin (), version.size ());
+  pp_doublequote (pp);
+  pp_c_right_paren (pp);
+  pp_c_right_bracket (pp);
+  pp_c_right_bracket (pp);
+
+  pp->set_padding (pp_before);
+}
+
+/* Prints "[clones: VERSION, +]" for a versioned function decl.
+   This only works for targets with target_version semantics.  */
+void
+pp_c_function_target_clones (c_pretty_printer *pp, tree t)
+{
+  /* Only print for target_version semantics.
+     This is because for target FMV semantics a target_clone always defines
+     the entire FMV set.  target_version semantics can mix target_clone and
+     target_version decls in the definition of a FMV set and so the
+     target_clone becomes a part of the identity of the declaration.  */
+  if (TARGET_HAS_FMV_TARGET_ATTRIBUTE)
+    return;
+
+  auto_vec<string_slice> versions = get_clone_versions (t, NULL, false);
+  if (versions.is_empty ())
+    return;
+
+  pp_c_whitespace (pp);
+
+  string_slice final_version = versions.pop ();
+  pp_c_left_bracket (pp);
+  pp_c_left_bracket (pp);
+  pp_string (pp, "target_clones");
+  pp_c_left_paren (pp);
+  for (string_slice version : versions)
+    {
+      pp_doublequote (pp);
+      pp_string_n (pp, version.begin (), version.size ());
+      pp_doublequote (pp);
+      pp_string (pp, ",");
+      pp_c_whitespace (pp);
+    }
+  pp_doublequote (pp);
+  pp_string_n (pp, final_version.begin (), final_version.size ());
+  pp_doublequote (pp);
+  pp_c_right_paren (pp);
+  pp_c_right_bracket (pp);
+  pp_c_right_bracket (pp);
+
+  pp->set_padding (pp_before);
 }
 
 #if CHECKING_P

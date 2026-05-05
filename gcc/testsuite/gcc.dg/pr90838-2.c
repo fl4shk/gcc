@@ -26,14 +26,13 @@ static const char table[128] = {
     57, 58, 59, 60, 61, 62, 63, 64
 };
 
-int ctz4 (unsigned long x)
+int ctz4 (unsigned long long x)
 {
-  unsigned long lsb = x & -x;
+  unsigned long long lsb = x & -x;
   return table[(lsb * magic) >> 58];
 }
 
 /* { dg-final { scan-tree-dump {= \.CTZ} "forwprop2" { target { { i?86-*-* x86_64-*-* } && { ! { ia32 } } } } } } */
 /* { dg-final { scan-tree-dump {= \.CTZ} "forwprop2" { target aarch64*-*-* } } } */
 /* { dg-final { scan-tree-dump {= \.CTZ} "forwprop2" { target { rv64 } } } } */
-/* { dg-final { scan-tree-dump {= \.CTZ} "forwprop2" { target { rv32 } } } } */
 /* { dg-final { scan-tree-dump {= \.CTZ} "forwprop2" { target { loongarch64*-*-* } } } } */

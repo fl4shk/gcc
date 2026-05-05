@@ -1,12 +1,12 @@
 /**
  * Generate `TypeInfo` objects, which are needed for run-time introspection of types.
  *
- * Copyright:   Copyright (C) 1999-2024 by The D Language Foundation, All Rights Reserved
+ * Copyright:   Copyright (C) 1999-2026 by The D Language Foundation, All Rights Reserved
  * Authors:     $(LINK2 https://www.digitalmars.com, Walter Bright)
  * License:     $(LINK2 https://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/src/dmd/typinf.d, _typinf.d)
+ * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/compiler/src/dmd/typinf.d, _typinf.d)
  * Documentation:  https://dlang.org/phobos/dmd_typinf.html
- * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/src/dmd/typinf.d
+ * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/compiler/src/dmd/typinf.d
  */
 
 module dmd.typinf;
@@ -22,6 +22,9 @@ import dmd.expression;
 import dmd.globals;
 import dmd.location;
 import dmd.mtype;
+import dmd.templatesem;
+import dmd.typesem;
+import dmd.dsymbolsem : addDeferredSemantic3;
 import core.stdc.stdio;
 
 /****************************************************
@@ -35,7 +38,7 @@ import core.stdc.stdio;
  * Returns:
  *      true if `TypeInfo` was generated and needs compiling to object file
  */
-bool genTypeInfo(Expression e, const ref Loc loc, Type torig, Scope* sc)
+bool genTypeInfo(Expression e, Loc loc, Type torig, Scope* sc)
 {
     // printf("genTypeInfo() %s\n", torig.toChars());
 
@@ -50,7 +53,7 @@ bool genTypeInfo(Expression e, const ref Loc loc, Type torig, Scope* sc)
             if (e)
                 .error(loc, "expression `%s` uses the GC and cannot be used with switch `-betterC`", e.toChars());
             else
-                .error(loc, "`TypeInfo` cannot be used with -betterC");
+                .error(loc, "`TypeInfo` cannot be used with `-betterC`");
 
             if (sc && sc.tinst)
                 sc.tinst.printInstantiationTrace(Classification.error, uint.max);
@@ -67,6 +70,9 @@ bool genTypeInfo(Expression e, const ref Loc loc, Type torig, Scope* sc)
 
     import dmd.typesem : merge2;
     Type t = torig.merge2(); // do this since not all Type's are merge'd
+    if (t.ty == Taarray)
+        t = makeNakedAssociativeArray(cast(TypeAArray)t);
+
     bool needsCodegen = false;
     if (!t.vtinfo)
     {
@@ -79,7 +85,7 @@ bool genTypeInfo(Expression e, const ref Loc loc, Type torig, Scope* sc)
         else if (t.isWild())
             t.vtinfo = TypeInfoWildDeclaration.create(t);
         else
-            t.vtinfo = getTypeInfoDeclaration(t);
+            t.vtinfo = getTypeInfoDeclaration(t, sc);
         assert(t.vtinfo);
 
         // ClassInfos are generated as part of ClassDeclaration codegen
@@ -103,9 +109,9 @@ bool genTypeInfo(Expression e, const ref Loc loc, Type torig, Scope* sc)
  * Returns:
  *      The type of the `TypeInfo` object associated with `t`
  */
-extern (C++) Type getTypeInfoType(const ref Loc loc, Type t, Scope* sc);
+extern (C++) Type getTypeInfoType(Loc loc, Type t, Scope* sc);
 
-private TypeInfoDeclaration getTypeInfoDeclaration(Type t)
+private TypeInfoDeclaration getTypeInfoDeclaration(Type t, Scope* sc)
 {
     //printf("Type::getTypeInfoDeclaration() %s\n", t.toChars());
     switch (t.ty)
@@ -117,7 +123,7 @@ private TypeInfoDeclaration getTypeInfoDeclaration(Type t)
     case Tsarray:
         return TypeInfoStaticArrayDeclaration.create(t);
     case Taarray:
-        return TypeInfoAssociativeArrayDeclaration.create(t);
+        return getTypeInfoAssocArrayDeclaration(cast(TypeAArray)t, sc);
     case Tstruct:
         return TypeInfoStructDeclaration.create(t);
     case Tvector:
@@ -139,6 +145,52 @@ private TypeInfoDeclaration getTypeInfoDeclaration(Type t)
     default:
         return TypeInfoDeclaration.create(t);
     }
+}
+
+/******************************************
+ * Instantiate TypeInfoAssociativeArrayDeclaration and fill
+ * the entry with TypeInfo_AssociativeArray.Entry!(t.index, t.next)
+ *
+ * Params:
+ *      t = TypeAArray to generate TypeInfo_AssociativeArray for
+ *      sc = context
+ * Returns:
+ *      a TypeInfoAssociativeArrayDeclaration with field entry initialized
+ */
+TypeInfoDeclaration getTypeInfoAssocArrayDeclaration(TypeAArray t, Scope* sc)
+{
+    import dmd.arraytypes;
+    import dmd.expressionsem;
+    import dmd.id;
+
+    assert(sc); // must not be called in the code generation phase
+
+    auto ti = TypeInfoAssociativeArrayDeclaration.create(t);
+    t.vtinfo = ti; // assign it early to avoid recursion in expressionSemantic
+    ti._scope = sc;
+    sc.setNoFree();
+    addDeferredSemantic3(ti);
+    return ti;
+}
+
+/******************************************
+ * Find or create a TypeAArray with index and next without
+ * any head modifiers, tail `inout` is replaced with `const`
+ *
+ * Params:
+ *      t = TypeAArray to convert
+ * Returns:
+ *      t = found type
+ */
+Type makeNakedAssociativeArray(TypeAArray t)
+{
+    Type tindex = t.index.toBasetype().nakedOf().substWildTo(MODFlags.const_);
+    Type tnext = t.next.toBasetype().nakedOf().substWildTo(MODFlags.const_);
+    if (tindex == t.index && tnext == t.next)
+        return t;
+
+    t = new TypeAArray(tnext, tindex);
+    return t.merge();
 }
 
 /**************************************************

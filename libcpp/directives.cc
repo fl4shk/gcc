@@ -1,5 +1,5 @@
 /* CPP Library. (Directive handling.)
-   Copyright (C) 1986-2025 Free Software Foundation, Inc.
+   Copyright (C) 1986-2026 Free Software Foundation, Inc.
    Contributed by Per Bothner, 1994-95.
    Based on CCCP program by Paul Rubin, June 1986
    Adapted to ANSI C, Richard Stallman, Jan 1987
@@ -734,13 +734,38 @@ do_undef (cpp_reader *pfile)
       if (pfile->cb.undef)
 	pfile->cb.undef (pfile, pfile->directive_line, node);
 
+      /* Handle -Wkeyword-macro registered identifiers.  */
+      bool diagnosed = false;
+      if (CPP_OPTION (pfile, cpp_warn_keyword_macro)
+	  && !CPP_OPTION (pfile, suppress_builtin_macro_warnings)
+	  && cpp_keyword_p (node))
+	{
+	  if (CPP_OPTION (pfile, cplusplus)
+	      && (strcmp ((const char *) NODE_NAME (node), "likely") == 0
+		  || strcmp ((const char *) NODE_NAME (node),
+			     "unlikely") == 0))
+	    /* CWG3053: likely and unlikely can be undefined.  */;
+	  else if (CPP_OPTION (pfile, cpp_pedantic)
+		   && CPP_OPTION (pfile, cplusplus)
+		   && CPP_OPTION (pfile, lang) >= CLK_GNUCXX26)
+	    cpp_pedwarning (pfile, CPP_W_KEYWORD_MACRO,
+			    "undefining keyword %qs", NODE_NAME (node));
+	  else
+	    cpp_warning (pfile, CPP_W_KEYWORD_MACRO,
+			 "undefining keyword %qs", NODE_NAME (node));
+	  diagnosed = true;
+	}
       /* 6.10.3.5 paragraph 2: [#undef] is ignored if the specified
 	 identifier is not currently defined as a macro name.  */
       if (cpp_macro_p (node))
 	{
-	  if (node->flags & NODE_WARN)
-	    cpp_error (pfile, CPP_DL_WARNING,
-		       "undefining %qs", NODE_NAME (node));
+	  if ((node->flags & NODE_WARN)
+	      && !CPP_OPTION (pfile, suppress_builtin_macro_warnings))
+	    {
+	      if (!diagnosed)
+		cpp_error (pfile, CPP_DL_WARNING,
+			   "undefining %qs", NODE_NAME (node));
+	    }
 	  else if (cpp_builtin_macro_p (node)
 		   && CPP_OPTION (pfile, warn_builtin_macro_redefined))
 	    cpp_warning (pfile, CPP_W_BUILTIN_MACRO_REDEFINED,
@@ -752,6 +777,11 @@ do_undef (cpp_reader *pfile)
 
 	  _cpp_free_definition (node);
 	}
+      else if ((node->flags & NODE_WARN)
+	       && !CPP_OPTION (pfile, suppress_builtin_macro_warnings)
+	       && !diagnosed
+	       && !cpp_keyword_p (node))
+	cpp_error (pfile, CPP_DL_WARNING, "undefining %qs", NODE_NAME (node));
     }
 
   check_eol (pfile, false);
@@ -1349,7 +1379,7 @@ do_embed (cpp_reader *pfile)
 {
   int angle_brackets;
   struct cpp_embed_params params = {};
-  bool ok;
+  bool ok, warned = false;
   const char *fname = NULL;
 
   /* Tell the lexer this is an embed directive.  */
@@ -1366,12 +1396,17 @@ do_embed (cpp_reader *pfile)
   if (CPP_PEDANTIC (pfile) && !CPP_OPTION (pfile, embed))
     {
       if (CPP_OPTION (pfile, cplusplus))
-	cpp_error (pfile, CPP_DL_PEDWARN,
-		   "%<#%s%> is a GCC extension", "embed");
+	warned = cpp_pedwarning (pfile, CPP_W_CXX26_EXTENSIONS,
+				 "%<#%s%> before C++26 is a GCC extension",
+				 "embed");
       else
-	cpp_error (pfile, CPP_DL_PEDWARN,
-		   "%<#%s%> before C23 is a GCC extension", "embed");
+	warned = cpp_pedwarning (pfile, CPP_W_PEDANTIC,
+				 "%<#%s%> before C23 is a GCC extension",
+				 "embed");
     }
+  if (!warned && CPP_OPTION (pfile, cpp_warn_c11_c23_compat) > 0)
+    cpp_warning (pfile, CPP_W_C11_C23_COMPAT,
+		 "%<#%s%> is a C23 feature", "embed");
 
   fname = parse_include (pfile, &angle_brackets, NULL, &params.loc);
   if (!fname)
@@ -3065,7 +3100,9 @@ cpp_define (cpp_reader *pfile, const char *str)
     }
   buf[count] = '\n';
 
+  CPP_OPTION (pfile, suppress_builtin_macro_warnings) = 1;
   run_directive (pfile, T_DEFINE, buf, count);
+  CPP_OPTION (pfile, suppress_builtin_macro_warnings) = 0;
 }
 
 /* Like cpp_define, but does not warn about unused macro.  */
@@ -3119,7 +3156,9 @@ _cpp_define_builtin (cpp_reader *pfile, const char *str)
   char *buf = (char *) alloca (len + 1);
   memcpy (buf, str, len);
   buf[len] = '\n';
+  CPP_OPTION (pfile, suppress_builtin_macro_warnings) = 1;
   run_directive (pfile, T_DEFINE, buf, len);
+  CPP_OPTION (pfile, suppress_builtin_macro_warnings) = 0;
 }
 
 /* Process MACRO as if it appeared as the body of an #undef.  */
@@ -3130,7 +3169,9 @@ cpp_undef (cpp_reader *pfile, const char *macro)
   char *buf = (char *) alloca (len + 1);
   memcpy (buf, macro, len);
   buf[len] = '\n';
+  CPP_OPTION (pfile, suppress_builtin_macro_warnings) = 1;
   run_directive (pfile, T_UNDEF, buf, len);
+  CPP_OPTION (pfile, suppress_builtin_macro_warnings) = 0;
 }
 
 /* Replace a previous definition DEF of the macro STR.  If DEF is NULL,

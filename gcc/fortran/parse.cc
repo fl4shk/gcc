@@ -1,5 +1,5 @@
 /* Main parser.
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -27,6 +27,9 @@ along with GCC; see the file COPYING3.  If not see
 #include "match.h"
 #include "parse.h"
 #include "tree-core.h"
+#include "tree.h"
+#include "fold-const.h"
+#include "tree-hash-traits.h"
 #include "omp-general.h"
 
 /* Current statement label.  Zero means no statement label.  Because new_st
@@ -47,6 +50,17 @@ static gfc_interface *previous_interface_head = nullptr;
 gfc_state_data *gfc_state_stack;
 static bool last_was_use_stmt = false;
 bool in_exec_part;
+
+/* True when matching an OpenMP context selector.  */
+bool gfc_matching_omp_context_selector;
+
+/* True when parsing the body of an OpenMP metadirective.  */
+bool gfc_in_omp_metadirective_body;
+
+/* Each metadirective body in the translation unit is given a unique
+   number, used to ensure that labels in the body have unique names.  */
+int gfc_omp_metadirective_region_count;
+vec<int> gfc_omp_metadirective_region_stack;
 
 /* TODO: Re-order functions to kill these forward decls.  */
 static void check_statement_label (gfc_statement);
@@ -229,6 +243,7 @@ decode_specification_statement (void)
       break;
 
     case 'g':
+      match ("generic", gfc_match_generic, ST_GENERIC);
       break;
 
     case 'i':
@@ -478,6 +493,7 @@ decode_statement (void)
   match (NULL, gfc_match_do, ST_DO);
   match (NULL, gfc_match_block, ST_BLOCK);
   match (NULL, gfc_match_associate, ST_ASSOCIATE);
+  match (NULL, gfc_match_change_team, ST_CHANGE_TEAM);
   match (NULL, gfc_match_critical, ST_CRITICAL);
   match (NULL, gfc_match_select, ST_SELECT_CASE);
   match (NULL, gfc_match_select_type, ST_SELECT_TYPE);
@@ -507,7 +523,6 @@ decode_statement (void)
 
     case 'c':
       match ("call", gfc_match_call, ST_CALL);
-      match ("change% team", gfc_match_change_team, ST_CHANGE_TEAM);
       match ("close", gfc_match_close, ST_CLOSE);
       match ("continue", gfc_match_continue, ST_CONTINUE);
       match ("contiguous", gfc_match_contiguous, ST_ATTR_DECL);
@@ -527,7 +542,6 @@ decode_statement (void)
 
     case 'e':
       match ("end file", gfc_match_endfile, ST_END_FILE);
-      match ("end team", gfc_match_end_team, ST_END_TEAM);
       match ("exit", gfc_match_exit, ST_EXIT);
       match ("else", gfc_match_else, ST_ELSE);
       match ("else where", gfc_match_elsewhere, ST_ELSEWHERE);
@@ -993,6 +1007,12 @@ decode_omp_directive (void)
       matcho ("assumes", gfc_match_omp_assumes, ST_OMP_ASSUMES);
       matchs ("assume", gfc_match_omp_assume, ST_OMP_ASSUME);
       break;
+
+    case 'b':
+      matcho ("begin metadirective", gfc_match_omp_begin_metadirective,
+	      ST_OMP_BEGIN_METADIRECTIVE);
+      break;
+
     case 'd':
       matchds ("declare reduction", gfc_match_omp_declare_reduction,
 	       ST_OMP_DECLARE_REDUCTION);
@@ -1005,11 +1025,19 @@ decode_omp_directive (void)
       break;
     case 'e':
       matchs ("end assume", gfc_match_omp_eos_error, ST_OMP_END_ASSUME);
+      matcho ("end metadirective", gfc_match_omp_eos_error,
+	      ST_OMP_END_METADIRECTIVE);
       matchs ("end simd", gfc_match_omp_eos_error, ST_OMP_END_SIMD);
       matchs ("end tile", gfc_match_omp_eos_error, ST_OMP_END_TILE);
       matchs ("end unroll", gfc_match_omp_eos_error, ST_OMP_END_UNROLL);
       matcho ("error", gfc_match_omp_error, ST_OMP_ERROR);
       break;
+
+    case 'm':
+      matcho ("metadirective", gfc_match_omp_metadirective,
+	      ST_OMP_METADIRECTIVE);
+      break;
+
     case 'n':
       matcho ("nothing", gfc_match_omp_nothing, ST_NONE);
       break;
@@ -1167,6 +1195,9 @@ decode_omp_directive (void)
     case 'f':
       matcho ("flush", gfc_match_omp_flush, ST_OMP_FLUSH);
       break;
+    case 'g':
+      matchdo ("groupprivate", gfc_match_omp_groupprivate, ST_OMP_GROUPPRIVATE);
+      break;
     case 'i':
       matcho ("interop", gfc_match_omp_interop, ST_OMP_INTEROP);
       break;
@@ -1309,6 +1340,10 @@ decode_omp_directive (void)
 	gfc_error_now ("Unclassifiable OpenMP directive at %C");
     }
 
+  /* If parsing a metadirective, let the caller deal with the cleanup.  */
+  if (gfc_matching_omp_context_selector)
+    return ST_NONE;
+
   reject_statement ();
 
   gfc_error_recovery ();
@@ -1428,6 +1463,12 @@ decode_omp_directive (void)
   gfc_buffer_error (false);
   gfc_current_locus = old_locus;
   return ST_GET_FCN_CHARACTERISTICS;
+}
+
+gfc_statement
+match_omp_directive (void)
+{
+  return decode_omp_directive ();
 }
 
 static gfc_statement
@@ -1893,8 +1934,7 @@ next_statement (void)
   case ST_OMP_INTEROP: \
   case ST_ERROR_STOP: case ST_OMP_SCAN: case ST_SYNC_ALL: \
   case ST_SYNC_IMAGES: case ST_SYNC_MEMORY: case ST_LOCK: case ST_UNLOCK: \
-  case ST_FORM_TEAM: case ST_CHANGE_TEAM: \
-  case ST_END_TEAM: case ST_SYNC_TEAM: \
+  case ST_FORM_TEAM: case ST_SYNC_TEAM: \
   case ST_EVENT_POST: case ST_EVENT_WAIT: case ST_FAIL_IMAGE: \
   case ST_OACC_UPDATE: case ST_OACC_WAIT: case ST_OACC_CACHE: \
   case ST_OACC_ENTER_DATA: case ST_OACC_EXIT_DATA
@@ -1953,14 +1993,54 @@ next_statement (void)
 #define case_omp_decl case ST_OMP_THREADPRIVATE: case ST_OMP_DECLARE_SIMD: \
   case ST_OMP_DECLARE_TARGET: case ST_OMP_DECLARE_REDUCTION: \
   case ST_OMP_DECLARE_VARIANT: case ST_OMP_ALLOCATE: case ST_OMP_ASSUMES: \
-  case ST_OMP_REQUIRES: case ST_OACC_ROUTINE: case ST_OACC_DECLARE
+  case ST_OMP_REQUIRES: case ST_OMP_GROUPPRIVATE: \
+  case ST_OACC_ROUTINE: case ST_OACC_DECLARE
+
+/* OpenMP statements that are followed by a structured block.  */
+
+#define case_omp_structured_block case ST_OMP_ASSUME: case ST_OMP_PARALLEL: \
+  case ST_OMP_PARALLEL_MASKED: case ST_OMP_PARALLEL_MASTER: \
+  case ST_OMP_PARALLEL_SECTIONS: case ST_OMP_ORDERED: \
+  case ST_OMP_CRITICAL: case ST_OMP_MASKED: case ST_OMP_MASTER: \
+  case ST_OMP_SCOPE: case ST_OMP_SECTIONS: case ST_OMP_SINGLE: \
+  case ST_OMP_TARGET: case ST_OMP_TARGET_DATA: case ST_OMP_TARGET_PARALLEL: \
+  case ST_OMP_TARGET_TEAMS: case ST_OMP_TEAMS: case ST_OMP_TASK: \
+  case ST_OMP_TASKGROUP: \
+  case ST_OMP_WORKSHARE: case ST_OMP_PARALLEL_WORKSHARE
+
+/* OpenMP statements that are followed by a do loop.  */
+
+#define case_omp_do case ST_OMP_DISTRIBUTE: \
+  case ST_OMP_DISTRIBUTE_PARALLEL_DO: \
+  case ST_OMP_DISTRIBUTE_PARALLEL_DO_SIMD: case ST_OMP_DISTRIBUTE_SIMD: \
+  case ST_OMP_DO: case ST_OMP_DO_SIMD: case ST_OMP_LOOP: \
+  case ST_OMP_PARALLEL_DO: case ST_OMP_PARALLEL_DO_SIMD: \
+  case ST_OMP_PARALLEL_LOOP: case ST_OMP_PARALLEL_MASKED_TASKLOOP: \
+  case ST_OMP_PARALLEL_MASKED_TASKLOOP_SIMD: \
+  case ST_OMP_PARALLEL_MASTER_TASKLOOP: \
+  case ST_OMP_PARALLEL_MASTER_TASKLOOP_SIMD: \
+  case ST_OMP_MASKED_TASKLOOP: case ST_OMP_MASKED_TASKLOOP_SIMD: \
+  case ST_OMP_MASTER_TASKLOOP: case ST_OMP_MASTER_TASKLOOP_SIMD: \
+  case ST_OMP_SIMD: \
+  case ST_OMP_TARGET_PARALLEL_DO: case ST_OMP_TARGET_PARALLEL_DO_SIMD: \
+  case ST_OMP_TARGET_PARALLEL_LOOP: case ST_OMP_TARGET_SIMD: \
+  case ST_OMP_TARGET_TEAMS_DISTRIBUTE: \
+  case ST_OMP_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO: \
+  case ST_OMP_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD: \
+  case ST_OMP_TARGET_TEAMS_DISTRIBUTE_SIMD: case ST_OMP_TARGET_TEAMS_LOOP: \
+  case ST_OMP_TASKLOOP: case ST_OMP_TASKLOOP_SIMD: \
+  case ST_OMP_TEAMS_DISTRIBUTE: case ST_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO: \
+  case ST_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD: \
+  case ST_OMP_TEAMS_DISTRIBUTE_SIMD: case ST_OMP_TEAMS_LOOP: \
+  case ST_OMP_TILE: case ST_OMP_UNROLL
 
 /* Block end statements.  Errors associated with interchanging these
    are detected in gfc_match_end().  */
 
 #define case_end case ST_END_BLOCK_DATA: case ST_END_FUNCTION: \
 		 case ST_END_PROGRAM: case ST_END_SUBROUTINE: \
-		 case ST_END_BLOCK: case ST_END_ASSOCIATE
+		 case ST_END_BLOCK: case ST_END_ASSOCIATE: \
+		 case ST_END_TEAM
 
 
 /* Push a new state onto the stack.  */
@@ -2092,6 +2172,7 @@ check_statement_label (gfc_statement st)
     case ST_END_CRITICAL:
     case ST_END_BLOCK:
     case ST_END_ASSOCIATE:
+    case ST_END_TEAM:
     case_executable:
     case_exec_markers:
       if (st == ST_ENDDO || st == ST_CONTINUE)
@@ -2592,6 +2673,9 @@ gfc_ascii_statement (gfc_statement st, bool strip_sentinel)
     case ST_OMP_BARRIER:
       p = "!$OMP BARRIER";
       break;
+    case ST_OMP_BEGIN_METADIRECTIVE:
+      p = "!$OMP BEGIN METADIRECTIVE";
+      break;
     case ST_OMP_CANCEL:
       p = "!$OMP CANCEL";
       break;
@@ -2696,6 +2780,9 @@ gfc_ascii_statement (gfc_statement st, bool strip_sentinel)
       break;
     case ST_OMP_END_MASTER_TASKLOOP_SIMD:
       p = "!$OMP END MASTER TASKLOOP SIMD";
+      break;
+    case ST_OMP_END_METADIRECTIVE:
+      p = "!$OMP END METADIRECTIVE";
       break;
     case ST_OMP_END_ORDERED:
       p = "!$OMP END ORDERED";
@@ -2826,6 +2913,9 @@ gfc_ascii_statement (gfc_statement st, bool strip_sentinel)
     case ST_OMP_FLUSH:
       p = "!$OMP FLUSH";
       break;
+    case ST_OMP_GROUPPRIVATE:
+      p = "!$OMP GROUPPRIVATE";
+      break;
     case ST_OMP_INTEROP:
       p = "!$OMP INTEROP";
       break;
@@ -2849,6 +2939,9 @@ gfc_ascii_statement (gfc_statement st, bool strip_sentinel)
       break;
     case ST_OMP_MASTER_TASKLOOP_SIMD:
       p = "!$OMP MASTER TASKLOOP SIMD";
+      break;
+    case ST_OMP_METADIRECTIVE:
+      p = "!$OMP METADIRECTIVE";
       break;
     case ST_OMP_ORDERED:
     case ST_OMP_ORDERED_DEPEND:
@@ -3116,6 +3209,10 @@ accept_statement (gfc_statement st)
       break;
 
     case ST_ENTRY:
+    case ST_OMP_METADIRECTIVE:
+    case ST_OMP_BEGIN_METADIRECTIVE:
+    case ST_CHANGE_TEAM:
+    case ST_END_TEAM:
     case_executable:
     case_exec_markers:
       add_statement ();
@@ -3300,6 +3397,8 @@ verify_st_order (st_state *p, gfc_statement st, bool silent)
 	goto order;
       break;
 
+    case ST_CHANGE_TEAM:
+    case ST_END_TEAM:
     case_executable:
     case_exec_markers:
       if (p->state < ORDER_EXEC)
@@ -3592,11 +3691,8 @@ check_component (gfc_symbol *sym, gfc_component *c, gfc_component **lockp,
                "of type LOCK_TYPE, which must have a codimension or be a "
                "subcomponent of a coarray", c->name, &c->loc);
 
-  if (lock_type && allocatable && !coarray)
-    gfc_error ("Allocatable component %s at %L of type LOCK_TYPE must have "
-               "a codimension", c->name, &c->loc);
-  else if (lock_type && allocatable && c->ts.type == BT_DERIVED
-           && c->ts.u.derived->attr.lock_comp)
+  if (lock_type && allocatable && !coarray && c->ts.type == BT_DERIVED
+      && c->ts.u.derived->attr.lock_comp)
     gfc_error ("Allocatable component %s at %L must have a codimension as "
                "it has a noncoarray subcomponent of type LOCK_TYPE",
                c->name, &c->loc);
@@ -3847,6 +3943,7 @@ parse_derived (void)
   gfc_state_data s;
   gfc_symbol *sym;
   gfc_component *c, *lock_comp = NULL, *event_comp = NULL;
+  bool pdt_parameters;
 
   accept_statement (ST_DERIVED_DECL);
   push_state (&s, COMP_DERIVED, gfc_new_block);
@@ -3855,8 +3952,10 @@ parse_derived (void)
   seen_private = 0;
   seen_sequence = 0;
   seen_component = 0;
+  pdt_parameters = false;
 
   compiling_type = 1;
+
 
   while (compiling_type)
     {
@@ -3870,6 +3969,31 @@ parse_derived (void)
 	case ST_PROCEDURE:
 	  accept_statement (st);
 	  seen_component = 1;
+	  /* Type parameters must not have an explicit access specification
+	     and must be placed before a PRIVATE statement. If a PRIVATE
+	     statement is encountered after type parameters, mark the remaining
+	     components as PRIVATE. */
+	  for (c = gfc_current_block ()->components; c; c = c->next)
+	    if (!c->next && (c->attr.pdt_kind || c->attr.pdt_len))
+	      {
+		pdt_parameters = true;
+		if (c->attr.access != ACCESS_UNKNOWN)
+		  {
+		    gfc_error ("Access specification of a type parameter at "
+			       "%C is not allowed");
+		    c->attr.access = ACCESS_PUBLIC;
+		    break;
+		  }
+		if (seen_private)
+		  {
+		    gfc_error ("The type parameter at %C must come before a "
+			       "PRIVATE statement");
+		    break;
+		  }
+	      }
+	    else if (pdt_parameters && seen_private
+		     && !(c->attr.pdt_kind || c->attr.pdt_len))
+	      c->attr.access = ACCESS_PRIVATE;
 	  break;
 
 	case ST_FINAL:
@@ -3895,7 +4019,7 @@ endType:
 	      break;
 	    }
 
-	  if (seen_component)
+	  if (seen_component && !pdt_parameters)
 	    {
 	      gfc_error ("PRIVATE statement at %C must precede "
 			 "structure components");
@@ -3905,7 +4029,10 @@ endType:
 	  if (seen_private)
 	    gfc_error ("Duplicate PRIVATE statement at %C");
 
-	  s.sym->component_access = ACCESS_PRIVATE;
+	  if (pdt_parameters)
+	    s.sym->component_access = ACCESS_PUBLIC;
+	  else
+	    s.sym->component_access = ACCESS_PRIVATE;
 
 	  accept_statement (ST_PRIVATE);
 	  seen_private = 1;
@@ -4314,6 +4441,8 @@ loop:
 	case ST_EQUIVALENCE:
 	case ST_IMPLICIT:
 	case ST_IMPLICIT_NONE:
+	case ST_OMP_ALLOCATE:
+	case ST_OMP_GROUPPRIVATE:
 	case ST_OMP_THREADPRIVATE:
 	case ST_PARAMETER:
 	case ST_STRUCTURE_DECL:
@@ -4440,6 +4569,11 @@ declSt:
 	  break;
 	}
 
+      accept_statement (st);
+      st = next_statement ();
+      goto loop;
+
+    case ST_GENERIC:
       accept_statement (st);
       st = next_statement ();
       goto loop;
@@ -5155,30 +5289,12 @@ parse_block_construct (void)
   pop_state ();
 }
 
-
-/* Parse an ASSOCIATE construct.  This is essentially a BLOCK construct
-   behind the scenes with compiler-generated variables.  */
-
 static void
-parse_associate (void)
+move_associates_to_block ()
 {
-  gfc_namespace* my_ns;
-  gfc_state_data s;
-  gfc_statement st;
-  gfc_association_list* a;
+  gfc_association_list *a;
   gfc_array_spec *as;
 
-  gfc_notify_std (GFC_STD_F2003, "ASSOCIATE construct at %C");
-
-  my_ns = gfc_build_block_ns (gfc_current_ns);
-
-  new_st.op = EXEC_BLOCK;
-  new_st.ext.block.ns = my_ns;
-  gcc_assert (new_st.ext.block.assoc);
-
-  /* Add all associate-names as BLOCK variables.  Creating them is enough
-     for now, they'll get their values during trans-* phase.  */
-  gfc_current_ns = my_ns;
   for (a = new_st.ext.block.assoc; a; a = a->next)
     {
       gfc_symbol *sym, *tsym;
@@ -5215,26 +5331,23 @@ parse_associate (void)
 
       /* Don’t share the character length information between associate
 	 variable and target if the length is not a compile-time constant,
-	 as we don’t want to touch some other character length variable when
-	 we try to initialize the associate variable’s character length
-	 variable.
-	 We do it here rather than later so that expressions referencing the
-	 associate variable will automatically have the correctly setup length
-	 information.  If we did it at resolution stage the expressions would
-	 use the original length information, and the variable a new different
-	 one, but only the latter one would be correctly initialized at
-	 translation stage, and the former one would need some additional setup
-	 there.  */
-      if (sym->ts.type == BT_CHARACTER
-	  && sym->ts.u.cl
+	 as we don’t want to touch some other character length variable
+	 when we try to initialize the associate variable’s character
+	 length variable.  We do it here rather than later so that expressions
+	 referencing the associate variable will automatically have the
+	 correctly setup length information.  If we did it at resolution stage
+	 the expressions would use the original length information, and the
+	 variable a new different one, but only the latter one would be
+	 correctly initialized at translation stage, and the former one would
+	 need some additional setup there.  */
+      if (sym->ts.type == BT_CHARACTER && sym->ts.u.cl
 	  && !(sym->ts.u.cl->length
 	       && sym->ts.u.cl->length->expr_type == EXPR_CONSTANT))
 	sym->ts.u.cl = gfc_new_charlen (gfc_current_ns, NULL);
 
       /* If the function has been parsed, go straight to the result to
 	 obtain the expression rank.  */
-      if (target->expr_type == EXPR_FUNCTION
-	  && target->symtree
+      if (target->expr_type == EXPR_FUNCTION && target->symtree
 	  && target->symtree->n.sym)
 	{
 	  tsym = target->symtree->n.sym;
@@ -5261,8 +5374,7 @@ parse_associate (void)
 	 by calling gfc_resolve_expr because the context is unavailable.
 	 However, the references can be resolved and the rank of the target
 	 expression set.  */
-      if (!sym->assoc->inferred_type
-	  && target->ref && gfc_resolve_ref (target)
+      if (!sym->assoc->inferred_type && target->ref && gfc_resolve_ref (target)
 	  && target->expr_type != EXPR_ARRAY
 	  && target->expr_type != EXPR_COMPCALL)
 	gfc_expression_rank (target);
@@ -5270,13 +5382,12 @@ parse_associate (void)
       /* Determine whether or not function expressions with unknown type are
 	 structure constructors. If so, the function result can be converted
 	 to be a derived type.  */
-      if (target->expr_type == EXPR_FUNCTION
-	  && target->ts.type == BT_UNKNOWN)
+      if (target->expr_type == EXPR_FUNCTION && target->ts.type == BT_UNKNOWN)
 	{
 	  gfc_symbol *derived;
 	  /* The derived type has a leading uppercase character.  */
 	  gfc_find_symbol (gfc_dt_upper_string (target->symtree->name),
-			   my_ns->parent, 1, &derived);
+			   gfc_current_ns->parent, 1, &derived);
 	  if (derived && derived->attr.flavor == FL_DERIVED)
 	    {
 	      sym->ts.type = BT_DERIVED;
@@ -5311,7 +5422,7 @@ parse_associate (void)
 		  attr.codimension = as->corank ? 1 : 0;
 		  sym->assoc->variable = true;
 		}
-	       else if (rank || corank)
+	      else if (rank || corank)
 		{
 		  as = gfc_get_array_spec ();
 		  as->type = AS_DEFERRED;
@@ -5366,6 +5477,30 @@ parse_associate (void)
 	}
       gfc_commit_symbols ();
     }
+}
+
+/* Parse an ASSOCIATE construct.  This is essentially a BLOCK construct
+   behind the scenes with compiler-generated variables.  */
+
+static void
+parse_associate (void)
+{
+  gfc_namespace* my_ns;
+  gfc_state_data s;
+  gfc_statement st;
+
+  gfc_notify_std (GFC_STD_F2003, "ASSOCIATE construct at %C");
+
+  my_ns = gfc_build_block_ns (gfc_current_ns);
+
+  new_st.op = EXEC_BLOCK;
+  new_st.ext.block.ns = my_ns;
+  gcc_assert (new_st.ext.block.assoc);
+
+  /* Add all associate-names as BLOCK variables.  Creating them is enough
+     for now, they'll get their values during trans-* phase.  */
+  gfc_current_ns = my_ns;
+  move_associates_to_block ();
 
   accept_statement (ST_ASSOCIATE);
   push_state (&s, COMP_ASSOCIATE, my_ns->proc_name);
@@ -5391,6 +5526,49 @@ loop:
   pop_state ();
 }
 
+static void
+parse_change_team (void)
+{
+  gfc_namespace *my_ns;
+  gfc_state_data s;
+  gfc_statement st;
+
+  gfc_notify_std (GFC_STD_F2018, "CHANGE TEAM construct at %C");
+
+  my_ns = gfc_build_block_ns (gfc_current_ns);
+
+  new_st.op = EXEC_CHANGE_TEAM;
+  new_st.ext.block.ns = my_ns;
+
+  /* Add all associate-names as BLOCK variables.  Creating them is enough
+     for now, they'll get their values during trans-* phase.  */
+  gfc_current_ns = my_ns;
+  if (new_st.ext.block.assoc)
+    move_associates_to_block ();
+
+  accept_statement (ST_CHANGE_TEAM);
+  push_state (&s, COMP_CHANGE_TEAM, my_ns->proc_name);
+
+loop:
+  st = parse_executable (ST_NONE);
+  switch (st)
+    {
+    case ST_NONE:
+      unexpected_eof ();
+
+    case_end:
+      accept_statement (st);
+      my_ns->code = gfc_state_stack->head;
+      break;
+
+    default:
+      unexpected_statement (st);
+      goto loop;
+    }
+
+  gfc_current_ns = gfc_current_ns->parent;
+  pop_state ();
+}
 
 /* Parse a DO loop.  Note that the ST_CYCLE and ST_EXIT statements are
    handled inside of parse_executable(), because they aren't really
@@ -5511,6 +5689,150 @@ loop:
   accept_statement (st);
 }
 
+/* Get the corresponding ending statement type for the OpenMP directive
+   OMP_ST.  If it does not have one, return ST_NONE.  */
+
+gfc_statement
+gfc_omp_end_stmt (gfc_statement omp_st,
+		  bool omp_do_p, bool omp_structured_p)
+{
+  if (omp_do_p)
+    {
+      switch (omp_st)
+	{
+	case ST_OMP_DISTRIBUTE: return ST_OMP_END_DISTRIBUTE;
+	case ST_OMP_DISTRIBUTE_PARALLEL_DO:
+	  return ST_OMP_END_DISTRIBUTE_PARALLEL_DO;
+	case ST_OMP_DISTRIBUTE_PARALLEL_DO_SIMD:
+	  return ST_OMP_END_DISTRIBUTE_PARALLEL_DO_SIMD;
+	case ST_OMP_DISTRIBUTE_SIMD:
+	  return ST_OMP_END_DISTRIBUTE_SIMD;
+	case ST_OMP_DO: return ST_OMP_END_DO;
+	case ST_OMP_DO_SIMD: return ST_OMP_END_DO_SIMD;
+	case ST_OMP_LOOP: return ST_OMP_END_LOOP;
+	case ST_OMP_PARALLEL_DO: return ST_OMP_END_PARALLEL_DO;
+	case ST_OMP_PARALLEL_DO_SIMD:
+	  return ST_OMP_END_PARALLEL_DO_SIMD;
+	case ST_OMP_PARALLEL_LOOP:
+	  return ST_OMP_END_PARALLEL_LOOP;
+	case ST_OMP_SIMD: return ST_OMP_END_SIMD;
+	case ST_OMP_TARGET_PARALLEL_DO:
+	  return ST_OMP_END_TARGET_PARALLEL_DO;
+	case ST_OMP_TARGET_PARALLEL_DO_SIMD:
+	  return ST_OMP_END_TARGET_PARALLEL_DO_SIMD;
+	case ST_OMP_TARGET_PARALLEL_LOOP:
+	  return ST_OMP_END_TARGET_PARALLEL_LOOP;
+	case ST_OMP_TARGET_SIMD: return ST_OMP_END_TARGET_SIMD;
+	case ST_OMP_TARGET_TEAMS_DISTRIBUTE:
+	  return ST_OMP_END_TARGET_TEAMS_DISTRIBUTE;
+	case ST_OMP_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO:
+	  return ST_OMP_END_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO;
+	case ST_OMP_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD:
+	  return ST_OMP_END_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD;
+	case ST_OMP_TARGET_TEAMS_DISTRIBUTE_SIMD:
+	  return ST_OMP_END_TARGET_TEAMS_DISTRIBUTE_SIMD;
+	case ST_OMP_TARGET_TEAMS_LOOP:
+	  return ST_OMP_END_TARGET_TEAMS_LOOP;
+	case ST_OMP_TASKLOOP: return ST_OMP_END_TASKLOOP;
+	case ST_OMP_TASKLOOP_SIMD: return ST_OMP_END_TASKLOOP_SIMD;
+	case ST_OMP_MASKED_TASKLOOP: return ST_OMP_END_MASKED_TASKLOOP;
+	case ST_OMP_MASKED_TASKLOOP_SIMD:
+	  return ST_OMP_END_MASKED_TASKLOOP_SIMD;
+	case ST_OMP_MASTER_TASKLOOP: return ST_OMP_END_MASTER_TASKLOOP;
+	case ST_OMP_MASTER_TASKLOOP_SIMD:
+	  return ST_OMP_END_MASTER_TASKLOOP_SIMD;
+	case ST_OMP_PARALLEL_MASKED_TASKLOOP:
+	  return ST_OMP_END_PARALLEL_MASKED_TASKLOOP;
+	case ST_OMP_PARALLEL_MASKED_TASKLOOP_SIMD:
+	  return ST_OMP_END_PARALLEL_MASKED_TASKLOOP_SIMD;
+	case ST_OMP_PARALLEL_MASTER_TASKLOOP:
+	  return ST_OMP_END_PARALLEL_MASTER_TASKLOOP;
+	case ST_OMP_PARALLEL_MASTER_TASKLOOP_SIMD:
+	  return ST_OMP_END_PARALLEL_MASTER_TASKLOOP_SIMD;
+	case ST_OMP_TEAMS_DISTRIBUTE:
+	  return ST_OMP_END_TEAMS_DISTRIBUTE;
+	case ST_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO:
+	  return ST_OMP_END_TEAMS_DISTRIBUTE_PARALLEL_DO;
+	case ST_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD:
+	  return ST_OMP_END_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD;
+	case ST_OMP_TEAMS_DISTRIBUTE_SIMD:
+	  return ST_OMP_END_TEAMS_DISTRIBUTE_SIMD;
+	case ST_OMP_TEAMS_LOOP:
+	  return ST_OMP_END_TEAMS_LOOP;
+	case ST_OMP_TILE:
+	  return ST_OMP_END_TILE;
+	case ST_OMP_UNROLL:
+	  return ST_OMP_END_UNROLL;
+	default:
+	  break;
+	}
+    }
+
+  if (omp_structured_p)
+    {
+      switch (omp_st)
+	{
+	case ST_OMP_ALLOCATORS:
+	  return ST_OMP_END_ALLOCATORS;
+	case ST_OMP_ASSUME:
+	  return ST_OMP_END_ASSUME;
+	case ST_OMP_ATOMIC:
+	  return ST_OMP_END_ATOMIC;
+	case ST_OMP_DISPATCH:
+	  return ST_OMP_END_DISPATCH;
+	case ST_OMP_PARALLEL:
+	  return ST_OMP_END_PARALLEL;
+	case ST_OMP_PARALLEL_MASKED:
+	  return ST_OMP_END_PARALLEL_MASKED;
+	case ST_OMP_PARALLEL_MASTER:
+	  return ST_OMP_END_PARALLEL_MASTER;
+	case ST_OMP_PARALLEL_SECTIONS:
+	  return ST_OMP_END_PARALLEL_SECTIONS;
+	case ST_OMP_SCOPE:
+	  return ST_OMP_END_SCOPE;
+	case ST_OMP_SECTIONS:
+	  return ST_OMP_END_SECTIONS;
+	case ST_OMP_ORDERED:
+	  return ST_OMP_END_ORDERED;
+	case ST_OMP_CRITICAL:
+	  return ST_OMP_END_CRITICAL;
+	case ST_OMP_MASKED:
+	  return ST_OMP_END_MASKED;
+	case ST_OMP_MASTER:
+	  return ST_OMP_END_MASTER;
+	case ST_OMP_SINGLE:
+	  return ST_OMP_END_SINGLE;
+	case ST_OMP_TARGET:
+	  return ST_OMP_END_TARGET;
+	case ST_OMP_TARGET_DATA:
+	  return ST_OMP_END_TARGET_DATA;
+	case ST_OMP_TARGET_PARALLEL:
+	  return ST_OMP_END_TARGET_PARALLEL;
+	case ST_OMP_TARGET_TEAMS:
+	  return ST_OMP_END_TARGET_TEAMS;
+	case ST_OMP_TASK:
+	  return ST_OMP_END_TASK;
+	case ST_OMP_TASKGROUP:
+	  return ST_OMP_END_TASKGROUP;
+	case ST_OMP_TEAMS:
+	  return ST_OMP_END_TEAMS;
+	case ST_OMP_TEAMS_DISTRIBUTE:
+	  return ST_OMP_END_TEAMS_DISTRIBUTE;
+	case ST_OMP_DISTRIBUTE:
+	  return ST_OMP_END_DISTRIBUTE;
+	case ST_OMP_WORKSHARE:
+	  return ST_OMP_END_WORKSHARE;
+	case ST_OMP_PARALLEL_WORKSHARE:
+	  return ST_OMP_END_PARALLEL_WORKSHARE;
+	case ST_OMP_BEGIN_METADIRECTIVE:
+	  return ST_OMP_END_METADIRECTIVE;
+	default:
+	  break;
+	}
+    }
+
+  return ST_NONE;
+}
 
 /* Parse the statements of OpenMP do/parallel do.  */
 
@@ -5571,94 +5893,27 @@ parse_omp_do (gfc_statement omp_st, int nested)
 
   st = next_statement ();
 do_end:
-  gfc_statement omp_end_st = ST_OMP_END_DO;
-  switch (omp_st)
+  gfc_statement omp_end_st = gfc_omp_end_stmt (omp_st, true, false);
+  if (omp_st == ST_NONE)
+    gcc_unreachable ();
+
+  /* If handling a metadirective variant, treat 'omp end metadirective'
+     as the expected end statement for the current construct.  */
+  if (gfc_state_stack->state == COMP_OMP_BEGIN_METADIRECTIVE)
     {
-    case ST_OMP_DISTRIBUTE: omp_end_st = ST_OMP_END_DISTRIBUTE; break;
-    case ST_OMP_DISTRIBUTE_PARALLEL_DO:
-      omp_end_st = ST_OMP_END_DISTRIBUTE_PARALLEL_DO;
-      break;
-    case ST_OMP_DISTRIBUTE_PARALLEL_DO_SIMD:
-      omp_end_st = ST_OMP_END_DISTRIBUTE_PARALLEL_DO_SIMD;
-      break;
-    case ST_OMP_DISTRIBUTE_SIMD:
-      omp_end_st = ST_OMP_END_DISTRIBUTE_SIMD;
-      break;
-    case ST_OMP_DO: omp_end_st = ST_OMP_END_DO; break;
-    case ST_OMP_DO_SIMD: omp_end_st = ST_OMP_END_DO_SIMD; break;
-    case ST_OMP_LOOP: omp_end_st = ST_OMP_END_LOOP; break;
-    case ST_OMP_PARALLEL_DO: omp_end_st = ST_OMP_END_PARALLEL_DO; break;
-    case ST_OMP_PARALLEL_DO_SIMD:
-      omp_end_st = ST_OMP_END_PARALLEL_DO_SIMD;
-      break;
-    case ST_OMP_PARALLEL_LOOP:
-      omp_end_st = ST_OMP_END_PARALLEL_LOOP;
-      break;
-    case ST_OMP_SIMD: omp_end_st = ST_OMP_END_SIMD; break;
-    case ST_OMP_TARGET_PARALLEL_DO:
-      omp_end_st = ST_OMP_END_TARGET_PARALLEL_DO;
-      break;
-    case ST_OMP_TARGET_PARALLEL_DO_SIMD:
-      omp_end_st = ST_OMP_END_TARGET_PARALLEL_DO_SIMD;
-      break;
-    case ST_OMP_TARGET_PARALLEL_LOOP:
-      omp_end_st = ST_OMP_END_TARGET_PARALLEL_LOOP;
-      break;
-    case ST_OMP_TARGET_SIMD: omp_end_st = ST_OMP_END_TARGET_SIMD; break;
-    case ST_OMP_TARGET_TEAMS_DISTRIBUTE:
-      omp_end_st = ST_OMP_END_TARGET_TEAMS_DISTRIBUTE;
-      break;
-    case ST_OMP_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO:
-      omp_end_st = ST_OMP_END_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO;
-      break;
-    case ST_OMP_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD:
-      omp_end_st = ST_OMP_END_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD;
-      break;
-    case ST_OMP_TARGET_TEAMS_DISTRIBUTE_SIMD:
-      omp_end_st = ST_OMP_END_TARGET_TEAMS_DISTRIBUTE_SIMD;
-      break;
-    case ST_OMP_TARGET_TEAMS_LOOP:
-      omp_end_st = ST_OMP_END_TARGET_TEAMS_LOOP;
-      break;
-    case ST_OMP_TASKLOOP: omp_end_st = ST_OMP_END_TASKLOOP; break;
-    case ST_OMP_TASKLOOP_SIMD: omp_end_st = ST_OMP_END_TASKLOOP_SIMD; break;
-    case ST_OMP_MASKED_TASKLOOP: omp_end_st = ST_OMP_END_MASKED_TASKLOOP; break;
-    case ST_OMP_MASKED_TASKLOOP_SIMD:
-      omp_end_st = ST_OMP_END_MASKED_TASKLOOP_SIMD;
-      break;
-    case ST_OMP_MASTER_TASKLOOP: omp_end_st = ST_OMP_END_MASTER_TASKLOOP; break;
-    case ST_OMP_MASTER_TASKLOOP_SIMD:
-      omp_end_st = ST_OMP_END_MASTER_TASKLOOP_SIMD;
-      break;
-    case ST_OMP_PARALLEL_MASKED_TASKLOOP:
-      omp_end_st = ST_OMP_END_PARALLEL_MASKED_TASKLOOP;
-      break;
-    case ST_OMP_PARALLEL_MASKED_TASKLOOP_SIMD:
-      omp_end_st = ST_OMP_END_PARALLEL_MASKED_TASKLOOP_SIMD;
-      break;
-    case ST_OMP_PARALLEL_MASTER_TASKLOOP:
-      omp_end_st = ST_OMP_END_PARALLEL_MASTER_TASKLOOP;
-      break;
-    case ST_OMP_PARALLEL_MASTER_TASKLOOP_SIMD:
-      omp_end_st = ST_OMP_END_PARALLEL_MASTER_TASKLOOP_SIMD;
-      break;
-    case ST_OMP_TEAMS_DISTRIBUTE:
-      omp_end_st = ST_OMP_END_TEAMS_DISTRIBUTE;
-      break;
-    case ST_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO:
-      omp_end_st = ST_OMP_END_TEAMS_DISTRIBUTE_PARALLEL_DO;
-      break;
-    case ST_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD:
-      omp_end_st = ST_OMP_END_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD;
-      break;
-    case ST_OMP_TEAMS_DISTRIBUTE_SIMD:
-      omp_end_st = ST_OMP_END_TEAMS_DISTRIBUTE_SIMD;
-      break;
-    case ST_OMP_TEAMS_LOOP: omp_end_st = ST_OMP_END_TEAMS_LOOP; break;
-    case ST_OMP_TILE: omp_end_st = ST_OMP_END_TILE; break;
-    case ST_OMP_UNROLL: omp_end_st = ST_OMP_END_UNROLL; break;
-    default: gcc_unreachable ();
+      if (st == ST_OMP_END_METADIRECTIVE)
+	st = omp_end_st;
+      else
+	{
+	  /* We have found some extra statements between the loop
+	     and the "end metadirective" which is required in a
+	     "begin metadirective" construct, or perhaps the
+	     "end metadirective" is missing entirely.  */
+	  gfc_error_now ("Expected OMP END METADIRECTIVE at %C");
+	  return st;
+	}
     }
+
   if (st == omp_end_st)
     {
       if (new_st.op == EXEC_OMP_END_NOWAIT)
@@ -5693,7 +5948,10 @@ parse_omp_oacc_atomic (bool omp_p)
   if (omp_p)
     {
       st_atomic = ST_OMP_ATOMIC;
-      st_end_atomic = ST_OMP_END_ATOMIC;
+      if (gfc_state_stack->state == COMP_OMP_BEGIN_METADIRECTIVE)
+	st_end_atomic = ST_OMP_END_METADIRECTIVE;
+      else
+	st_end_atomic = ST_OMP_END_ATOMIC;
     }
   else
     {
@@ -5944,7 +6202,10 @@ parse_openmp_allocate_block (gfc_statement omp_st)
   accept_statement (st);
   pop_state ();
   st = next_statement ();
-  if (omp_st == ST_OMP_ALLOCATORS && st == ST_OMP_END_ALLOCATORS)
+  if (omp_st == ST_OMP_ALLOCATORS
+      && (st == ST_OMP_END_ALLOCATORS
+	  || (st == ST_OMP_END_METADIRECTIVE
+	      && gfc_state_stack->state == COMP_OMP_BEGIN_METADIRECTIVE)))
     {
       accept_statement (st);
       st = next_statement ();
@@ -5970,80 +6231,15 @@ parse_omp_structured_block (gfc_statement omp_st, bool workshare_stmts_only)
   np->op = cp->op;
   np->block = NULL;
 
-  switch (omp_st)
-    {
-    case ST_OMP_ASSUME:
-      omp_end_st = ST_OMP_END_ASSUME;
-      break;
-    case ST_OMP_PARALLEL:
-      omp_end_st = ST_OMP_END_PARALLEL;
-      break;
-    case ST_OMP_PARALLEL_MASKED:
-      omp_end_st = ST_OMP_END_PARALLEL_MASKED;
-      break;
-    case ST_OMP_PARALLEL_MASTER:
-      omp_end_st = ST_OMP_END_PARALLEL_MASTER;
-      break;
-    case ST_OMP_PARALLEL_SECTIONS:
-      omp_end_st = ST_OMP_END_PARALLEL_SECTIONS;
-      break;
-    case ST_OMP_SCOPE:
-      omp_end_st = ST_OMP_END_SCOPE;
-      break;
-    case ST_OMP_SECTIONS:
-      omp_end_st = ST_OMP_END_SECTIONS;
-      break;
-    case ST_OMP_ORDERED:
-      omp_end_st = ST_OMP_END_ORDERED;
-      break;
-    case ST_OMP_CRITICAL:
-      omp_end_st = ST_OMP_END_CRITICAL;
-      break;
-    case ST_OMP_MASKED:
-      omp_end_st = ST_OMP_END_MASKED;
-      break;
-    case ST_OMP_MASTER:
-      omp_end_st = ST_OMP_END_MASTER;
-      break;
-    case ST_OMP_SINGLE:
-      omp_end_st = ST_OMP_END_SINGLE;
-      break;
-    case ST_OMP_TARGET:
-      omp_end_st = ST_OMP_END_TARGET;
-      break;
-    case ST_OMP_TARGET_DATA:
-      omp_end_st = ST_OMP_END_TARGET_DATA;
-      break;
-    case ST_OMP_TARGET_PARALLEL:
-      omp_end_st = ST_OMP_END_TARGET_PARALLEL;
-      break;
-    case ST_OMP_TARGET_TEAMS:
-      omp_end_st = ST_OMP_END_TARGET_TEAMS;
-      break;
-    case ST_OMP_TASK:
-      omp_end_st = ST_OMP_END_TASK;
-      break;
-    case ST_OMP_TASKGROUP:
-      omp_end_st = ST_OMP_END_TASKGROUP;
-      break;
-    case ST_OMP_TEAMS:
-      omp_end_st = ST_OMP_END_TEAMS;
-      break;
-    case ST_OMP_TEAMS_DISTRIBUTE:
-      omp_end_st = ST_OMP_END_TEAMS_DISTRIBUTE;
-      break;
-    case ST_OMP_DISTRIBUTE:
-      omp_end_st = ST_OMP_END_DISTRIBUTE;
-      break;
-    case ST_OMP_WORKSHARE:
-      omp_end_st = ST_OMP_END_WORKSHARE;
-      break;
-    case ST_OMP_PARALLEL_WORKSHARE:
-      omp_end_st = ST_OMP_END_PARALLEL_WORKSHARE;
-      break;
-    default:
-      gcc_unreachable ();
-    }
+  omp_end_st = gfc_omp_end_stmt (omp_st, false, true);
+  if (omp_end_st == ST_NONE)
+    gcc_unreachable ();
+
+  /* If handling a metadirective variant, treat 'omp end metadirective'
+     as the expected end statement for the current construct.  */
+  if (gfc_state_stack->previous != NULL
+      && gfc_state_stack->previous->state == COMP_OMP_BEGIN_METADIRECTIVE)
+    omp_end_st = ST_OMP_END_METADIRECTIVE;
 
   bool block_construct = false;
   gfc_namespace *my_ns = NULL;
@@ -6089,11 +6285,13 @@ parse_omp_structured_block (gfc_statement omp_st, bool workshare_stmts_only)
       case ST_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO:
       case ST_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD:
       case ST_OMP_TEAMS_LOOP:
+      case ST_OMP_METADIRECTIVE:
+      case ST_OMP_BEGIN_METADIRECTIVE:
 	{
 	  gfc_state_data *stk = gfc_state_stack->previous;
 	  if (stk->state == COMP_OMP_STRICTLY_STRUCTURED_BLOCK)
 	    stk = stk->previous;
-	  stk->tail->ext.omp_clauses->target_first_st_is_teams = true;
+	  stk->tail->ext.omp_clauses->target_first_st_is_teams_or_meta = true;
 	  break;
 	}
       default:
@@ -6202,6 +6400,14 @@ parse_omp_structured_block (gfc_statement omp_st, bool workshare_stmts_only)
 	      accept_statement (st);
 	      st = next_statement ();
 	    }
+	  else if (omp_end_st == ST_OMP_END_METADIRECTIVE)
+	    {
+	      /* We have found some extra statements between the END BLOCK
+		 and the "end metadirective" which is required in a
+		 "begin metadirective" construct, or perhaps the
+		 "end metadirective" is missing entirely.  */
+	      gfc_error_now ("Expected OMP END METADIRECTIVE at %C");
+	    }
 	  return st;
 	}
       else if (st != omp_end_st || block_construct)
@@ -6229,7 +6435,7 @@ parse_omp_structured_block (gfc_statement omp_st, bool workshare_stmts_only)
 			 new_st.ext.omp_name) != 0))
 	gfc_error ("Name after !$omp critical and !$omp end critical does "
 		   "not match at %C");
-      free (CONST_CAST (char *, new_st.ext.omp_name));
+      free (const_cast<char *> (new_st.ext.omp_name));
       new_st.ext.omp_name = NULL;
       break;
     case EXEC_OMP_END_SINGLE:
@@ -6266,7 +6472,6 @@ parse_omp_structured_block (gfc_statement omp_st, bool workshare_stmts_only)
   return st;
 }
 
-
 static gfc_statement
 parse_omp_dispatch (void)
 {
@@ -6284,7 +6489,10 @@ parse_omp_dispatch (void)
 
   st = next_statement ();
   if (st == ST_NONE)
-    return st;
+    {
+      pop_state ();
+      return st;
+    }
   if (st == ST_CALL || st == ST_ASSIGNMENT)
     accept_statement (st);
   else
@@ -6295,7 +6503,9 @@ parse_omp_dispatch (void)
     }
   pop_state ();
   st = next_statement ();
-  if (st == ST_OMP_END_DISPATCH)
+  if (st == ST_OMP_END_DISPATCH
+      || (st == ST_OMP_END_METADIRECTIVE
+	  && gfc_state_stack->state == COMP_OMP_BEGIN_METADIRECTIVE))
     {
       if (cp->ext.omp_clauses->nowait && new_st.ext.omp_bool)
 	gfc_error_now ("Duplicated NOWAIT clause on !$OMP DISPATCH and !$OMP "
@@ -6307,6 +6517,148 @@ parse_omp_dispatch (void)
   return st;
 }
 
+static gfc_statement
+parse_omp_metadirective_body (gfc_statement omp_st)
+{
+  gfc_omp_variant *variant
+    = new_st.ext.omp_variants;
+  locus body_locus = gfc_current_locus;
+  bool saw_error = false;
+
+  accept_statement (omp_st);
+
+  gfc_statement next_st = ST_NONE;
+  locus next_loc;
+
+  while (variant)
+    {
+      gfc_current_locus = body_locus;
+      gfc_state_data s;
+      bool workshare_p
+	= (variant->stmt == ST_OMP_WORKSHARE
+	   || variant->stmt == ST_OMP_PARALLEL_WORKSHARE);
+      enum gfc_compile_state new_state
+	= (omp_st == ST_OMP_METADIRECTIVE
+	   ? COMP_OMP_METADIRECTIVE : COMP_OMP_BEGIN_METADIRECTIVE);
+
+      new_st = *variant->code;
+      push_state (&s, new_state, NULL);
+
+      gfc_statement st;
+      bool old_in_metadirective_body = gfc_in_omp_metadirective_body;
+      gfc_in_omp_metadirective_body = true;
+
+      gfc_omp_metadirective_region_count++;
+      gfc_omp_metadirective_region_stack.safe_push (
+	gfc_omp_metadirective_region_count);
+
+      switch (variant->stmt)
+	{
+	case_omp_structured_block:
+	  st = parse_omp_structured_block (variant->stmt, workshare_p);
+	  break;
+	case_omp_do:
+	  st = parse_omp_do (variant->stmt, 0);
+	  /* TODO: Does st == ST_IMPLIED_ENDDO need special handling?  */
+	  break;
+	case ST_OMP_ALLOCATORS:
+	  st = parse_openmp_allocate_block (variant->stmt);
+	  break;
+	case ST_OMP_ATOMIC:
+	  st = parse_omp_oacc_atomic (true);
+	  break;
+	case ST_OMP_DISPATCH:
+	  st = parse_omp_dispatch ();
+	  break;
+	default:
+	  accept_statement (variant->stmt);
+	  st = parse_executable (next_statement ());
+	  break;
+	}
+
+      if (gfc_state_stack->state == COMP_OMP_METADIRECTIVE
+	  && startswith (gfc_ascii_statement (st), "!$OMP END "))
+	{
+	  for (gfc_state_data *p = gfc_state_stack; p; p = p->previous)
+	    if (p->state == COMP_OMP_STRUCTURED_BLOCK
+		|| p->state == COMP_OMP_BEGIN_METADIRECTIVE)
+	      goto finish;
+	  gfc_error ("Unexpected %s statement in OMP METADIRECTIVE "
+		     "block at %C",
+		     gfc_ascii_statement (st));
+	  reject_statement ();
+	  st = next_statement ();
+	}
+
+    finish:
+
+      /* Sanity-check that each variant finishes parsing at the same place.  */
+      if (next_st == ST_NONE)
+	{
+	  next_st = st;
+	  next_loc = gfc_current_locus;
+	}
+      else if (st != next_st
+	       || next_loc.nextc != gfc_current_locus.nextc
+	       || next_loc.u.lb != gfc_current_locus.u.lb)
+	{
+	  saw_error = true;
+	  next_st = st;
+	  next_loc = gfc_current_locus;
+	}
+
+      gfc_in_omp_metadirective_body = old_in_metadirective_body;
+
+      if (gfc_state_stack->head)
+	*variant->code = *gfc_state_stack->head;
+      pop_state ();
+
+      gfc_omp_metadirective_region_stack.pop ();
+      int outer_omp_metadirective_region
+	= gfc_omp_metadirective_region_stack.last ();
+
+      /* Rebind labels in the last statement -- which is the first statement
+	 past the end of the metadirective body -- to the outer region.  */
+      if (gfc_statement_label)
+	gfc_statement_label = gfc_rebind_label (gfc_statement_label,
+						outer_omp_metadirective_region);
+      if ((new_st.op == EXEC_READ || new_st.op == EXEC_WRITE)
+	  && new_st.ext.dt->format_label
+	  && new_st.ext.dt->format_label != &format_asterisk)
+	new_st.ext.dt->format_label
+	  = gfc_rebind_label (new_st.ext.dt->format_label,
+			      outer_omp_metadirective_region);
+      if (new_st.label1)
+	new_st.label1
+	  = gfc_rebind_label (new_st.label1, outer_omp_metadirective_region);
+      if (new_st.here)
+	new_st.here
+	  = gfc_rebind_label (new_st.here, outer_omp_metadirective_region);
+
+      gfc_commit_symbols ();
+      gfc_warning_check ();
+      if (variant->next)
+	gfc_clear_new_st ();
+
+      variant = variant->next;
+    }
+
+  if (saw_error)
+    {
+      if (omp_st == ST_OMP_METADIRECTIVE)
+	gfc_error_now ("Variants in a metadirective at %L have "
+		       "different associations; "
+		       "consider using a BLOCK construct "
+		       "or BEGIN/END METADIRECTIVE", &body_locus);
+      else
+	gfc_error_now ("Variants in a metadirective at %L have "
+		       "different associations; "
+		       "consider using a BLOCK construct", &body_locus);
+    }
+
+  return next_st;
+}
+
 /* Accept a series of executable statements.  We return the first
    statement that doesn't fit to the caller.  Any block statements are
    passed on to the correct handler, which usually passes the buck
@@ -6316,6 +6668,7 @@ static gfc_statement
 parse_executable (gfc_statement st)
 {
   int close_flag;
+  bool one_stmt_p = false;
   in_exec_part = true;
 
   if (st == ST_NONE)
@@ -6323,6 +6676,12 @@ parse_executable (gfc_statement st)
 
   for (;;)
     {
+      /* Only parse one statement for the form of metadirective without
+	 an explicit begin..end.  */
+      if (gfc_state_stack->state == COMP_OMP_METADIRECTIVE && one_stmt_p)
+	return st;
+      one_stmt_p = true;
+
       close_flag = check_do_closure ();
       if (close_flag)
 	switch (st)
@@ -6337,6 +6696,7 @@ parse_executable (gfc_statement st)
 	  case ST_STOP:
 	  case ST_ERROR_STOP:
 	  case ST_END_SUBROUTINE:
+	  case ST_END_TEAM:
 
 	  case ST_DO:
 	  case ST_FORALL:
@@ -6374,6 +6734,10 @@ parse_executable (gfc_statement st)
 
 	case ST_ASSOCIATE:
 	  parse_associate ();
+	  break;
+
+	case ST_CHANGE_TEAM:
+	  parse_change_team ();
 	  break;
 
 	case ST_IF_BLOCK:
@@ -6432,70 +6796,13 @@ parse_executable (gfc_statement st)
 	  st = parse_openmp_allocate_block (st);
 	  continue;
 
-	case ST_OMP_ASSUME:
-	case ST_OMP_PARALLEL:
-	case ST_OMP_PARALLEL_MASKED:
-	case ST_OMP_PARALLEL_MASTER:
-	case ST_OMP_PARALLEL_SECTIONS:
-	case ST_OMP_ORDERED:
-	case ST_OMP_CRITICAL:
-	case ST_OMP_MASKED:
-	case ST_OMP_MASTER:
-	case ST_OMP_SCOPE:
-	case ST_OMP_SECTIONS:
-	case ST_OMP_SINGLE:
-	case ST_OMP_TARGET:
-	case ST_OMP_TARGET_DATA:
-	case ST_OMP_TARGET_PARALLEL:
-	case ST_OMP_TARGET_TEAMS:
-	case ST_OMP_TEAMS:
-	case ST_OMP_TASK:
-	case ST_OMP_TASKGROUP:
-	  st = parse_omp_structured_block (st, false);
+	case_omp_structured_block:
+	  st = parse_omp_structured_block (st,
+					   st == ST_OMP_WORKSHARE
+					   || st == ST_OMP_PARALLEL_WORKSHARE);
 	  continue;
 
-	case ST_OMP_WORKSHARE:
-	case ST_OMP_PARALLEL_WORKSHARE:
-	  st = parse_omp_structured_block (st, true);
-	  continue;
-
-	case ST_OMP_DISTRIBUTE:
-	case ST_OMP_DISTRIBUTE_PARALLEL_DO:
-	case ST_OMP_DISTRIBUTE_PARALLEL_DO_SIMD:
-	case ST_OMP_DISTRIBUTE_SIMD:
-	case ST_OMP_DO:
-	case ST_OMP_DO_SIMD:
-	case ST_OMP_LOOP:
-	case ST_OMP_PARALLEL_DO:
-	case ST_OMP_PARALLEL_DO_SIMD:
-	case ST_OMP_PARALLEL_LOOP:
-	case ST_OMP_PARALLEL_MASKED_TASKLOOP:
-	case ST_OMP_PARALLEL_MASKED_TASKLOOP_SIMD:
-	case ST_OMP_PARALLEL_MASTER_TASKLOOP:
-	case ST_OMP_PARALLEL_MASTER_TASKLOOP_SIMD:
-	case ST_OMP_MASKED_TASKLOOP:
-	case ST_OMP_MASKED_TASKLOOP_SIMD:
-	case ST_OMP_MASTER_TASKLOOP:
-	case ST_OMP_MASTER_TASKLOOP_SIMD:
-	case ST_OMP_SIMD:
-	case ST_OMP_TARGET_PARALLEL_DO:
-	case ST_OMP_TARGET_PARALLEL_DO_SIMD:
-	case ST_OMP_TARGET_PARALLEL_LOOP:
-	case ST_OMP_TARGET_SIMD:
-	case ST_OMP_TARGET_TEAMS_DISTRIBUTE:
-	case ST_OMP_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO:
-	case ST_OMP_TARGET_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD:
-	case ST_OMP_TARGET_TEAMS_DISTRIBUTE_SIMD:
-	case ST_OMP_TARGET_TEAMS_LOOP:
-	case ST_OMP_TASKLOOP:
-	case ST_OMP_TASKLOOP_SIMD:
-	case ST_OMP_TEAMS_DISTRIBUTE:
-	case ST_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO:
-	case ST_OMP_TEAMS_DISTRIBUTE_PARALLEL_DO_SIMD:
-	case ST_OMP_TEAMS_DISTRIBUTE_SIMD:
-	case ST_OMP_TEAMS_LOOP:
-	case ST_OMP_TILE:
-	case ST_OMP_UNROLL:
+	case_omp_do:
 	  st = parse_omp_do (st, 0);
 	  if (st == ST_IMPLIED_ENDDO)
 	    return st;
@@ -6512,6 +6819,17 @@ parse_executable (gfc_statement st)
 	case ST_OMP_DISPATCH:
 	  st = parse_omp_dispatch ();
 	  continue;
+
+	case ST_OMP_METADIRECTIVE:
+	case ST_OMP_BEGIN_METADIRECTIVE:
+	  st = parse_omp_metadirective_body (st);
+	  continue;
+
+	case ST_OMP_END_METADIRECTIVE:
+	  if (gfc_state_stack->state == COMP_OMP_BEGIN_METADIRECTIVE)
+	    return next_statement ();
+	  else
+	    return st;
 
 	default:
 	  return st;
@@ -6535,6 +6853,28 @@ parse_executable (gfc_statement st)
 }
 
 
+/* Update statement function formal argument lists that reference OLD_SYM
+   to point to NEW_SYM instead.  This prevents use-after-free when
+   gfc_fixup_sibling_symbols replaces and frees a symbol that is also
+   used as a statement function dummy argument (PR95879).  */
+
+static void
+fixup_st_func_formals (gfc_symtree *st, gfc_symbol *old_sym,
+		       gfc_symbol *new_sym)
+{
+  if (st == NULL)
+    return;
+
+  fixup_st_func_formals (st->left, old_sym, new_sym);
+  fixup_st_func_formals (st->right, old_sym, new_sym);
+
+  if (st->n.sym && st->n.sym->attr.proc == PROC_ST_FUNCTION)
+    for (gfc_formal_arglist *fa = st->n.sym->formal; fa; fa = fa->next)
+      if (fa->sym == old_sym)
+	fa->sym = new_sym;
+}
+
+
 /* Fix the symbols for sibling functions.  These are incorrectly added to
    the child namespace as the parser didn't know about this procedure.  */
 
@@ -6544,6 +6884,7 @@ gfc_fixup_sibling_symbols (gfc_symbol *sym, gfc_namespace *siblings)
   gfc_namespace *ns;
   gfc_symtree *st;
   gfc_symbol *old_sym;
+  bool imported;
 
   for (ns = siblings; ns; ns = ns->sibling)
     {
@@ -6559,6 +6900,7 @@ gfc_fixup_sibling_symbols (gfc_symbol *sym, gfc_namespace *siblings)
 	goto fixup_contained;
 
       old_sym = st->n.sym;
+      imported = old_sym->attr.imported == 1;
       if (old_sym->ns == ns
 	    && !old_sym->attr.contained
 
@@ -6585,6 +6927,12 @@ gfc_fixup_sibling_symbols (gfc_symbol *sym, gfc_namespace *siblings)
 	  /* Replace it with the symbol from the parent namespace.  */
 	  st->n.sym = sym;
 	  sym->refs++;
+	  if (imported)
+	    sym->attr.imported = 1;
+
+	  /* Update statement function formal argument lists that still
+	     reference old_sym before releasing it (PR95879).  */
+	  fixup_st_func_formals (ns->sym_root, old_sym, sym);
 
 	  gfc_release_symbol (old_sym);
 	}
@@ -6816,6 +7164,15 @@ loop:
 	case_end:
 	  accept_statement (st);
 	  goto done;
+
+	/* Specification statements cannot appear after executable statements.  */
+	case_decl:
+	case_omp_decl:
+	  gfc_error ("%s statement at %C cannot appear after executable statements",
+		     gfc_ascii_statement (st));
+	  reject_statement ();
+	  st = next_statement ();
+	  continue;
 
 	default:
 	  break;
@@ -7146,6 +7503,16 @@ add_global_program (void)
     }
 }
 
+/* Rewrite expression where needed.
+ - Currently this is done for co-indexed expressions only.
+*/
+static void
+rewrite_expr_tree (gfc_namespace *gfc_global_ns_list)
+{
+  for (gfc_current_ns = gfc_global_ns_list; gfc_current_ns;
+       gfc_current_ns = gfc_current_ns->sibling)
+    gfc_coarray_rewrite (gfc_current_ns);
+}
 
 /* Resolve all the program units.  */
 static void
@@ -7277,6 +7644,12 @@ gfc_parse_file (void)
   gfc_clear_new_st ();
 
   gfc_statement_label = NULL;
+
+  gfc_omp_metadirective_region_count = 0;
+  gfc_omp_metadirective_region_stack.truncate (0);
+  gfc_omp_metadirective_region_stack.safe_push (0);
+  gfc_in_omp_metadirective_body = false;
+  gfc_matching_omp_context_selector = false;
 
   if (setjmp (eof_buf))
     return false;	/* Come here on unexpected EOF */
@@ -7419,6 +7792,9 @@ done:
   /* Do the resolution.  */
   resolve_all_program_units (gfc_global_ns_list);
 
+  if (flag_coarray == GFC_FCOARRAY_LIB)
+    rewrite_expr_tree (gfc_global_ns_list);
+
   /* Go through all top-level namespaces and unset the implicit_pure
      attribute for any procedures that call something not pure or
      implicit_pure.  Because the a procedure marked as not implicit_pure
@@ -7459,45 +7835,53 @@ done:
     {
     case OMP_REQ_ATOMIC_MEM_ORDER_SEQ_CST:
       omp_requires_mask
-	= (enum omp_requires) (omp_requires_mask | OMP_MEMORY_ORDER_SEQ_CST);
+	= (enum omp_requires) (omp_requires_mask
+			       | int (OMP_MEMORY_ORDER_SEQ_CST));
       break;
     case OMP_REQ_ATOMIC_MEM_ORDER_ACQ_REL:
       omp_requires_mask
-	= (enum omp_requires) (omp_requires_mask | OMP_MEMORY_ORDER_ACQ_REL);
+	= (enum omp_requires) (omp_requires_mask
+			       | int (OMP_MEMORY_ORDER_ACQ_REL));
       break;
     case OMP_REQ_ATOMIC_MEM_ORDER_ACQUIRE:
       omp_requires_mask
-	= (enum omp_requires) (omp_requires_mask | OMP_MEMORY_ORDER_ACQUIRE);
+	= (enum omp_requires) (omp_requires_mask
+			       | int (OMP_MEMORY_ORDER_ACQUIRE));
       break;
     case OMP_REQ_ATOMIC_MEM_ORDER_RELAXED:
       omp_requires_mask
-	= (enum omp_requires) (omp_requires_mask | OMP_MEMORY_ORDER_RELAXED);
+	= (enum omp_requires) (omp_requires_mask
+			       | int (OMP_MEMORY_ORDER_RELAXED));
       break;
     case OMP_REQ_ATOMIC_MEM_ORDER_RELEASE:
       omp_requires_mask
-	= (enum omp_requires) (omp_requires_mask | OMP_MEMORY_ORDER_RELEASE);
+	= (enum omp_requires) (omp_requires_mask
+			       | int (OMP_MEMORY_ORDER_RELEASE));
       break;
     }
 
   if (omp_target_seen)
     omp_requires_mask = (enum omp_requires) (omp_requires_mask
-					     | OMP_REQUIRES_TARGET_USED);
+					     | int (OMP_REQUIRES_TARGET_USED));
   if (omp_requires & OMP_REQ_REVERSE_OFFLOAD)
-    omp_requires_mask = (enum omp_requires) (omp_requires_mask
-					     | OMP_REQUIRES_REVERSE_OFFLOAD);
+    omp_requires_mask
+      = (enum omp_requires) (omp_requires_mask
+			     | int (OMP_REQUIRES_REVERSE_OFFLOAD));
   if (omp_requires & OMP_REQ_UNIFIED_ADDRESS)
-    omp_requires_mask = (enum omp_requires) (omp_requires_mask
-					     | OMP_REQUIRES_UNIFIED_ADDRESS);
+    omp_requires_mask
+      = (enum omp_requires) (omp_requires_mask
+			     | int (OMP_REQUIRES_UNIFIED_ADDRESS));
   if (omp_requires & OMP_REQ_UNIFIED_SHARED_MEMORY)
     omp_requires_mask
-	  = (enum omp_requires) (omp_requires_mask
-				 | OMP_REQUIRES_UNIFIED_SHARED_MEMORY);
+      = (enum omp_requires) (omp_requires_mask
+			     | int (OMP_REQUIRES_UNIFIED_SHARED_MEMORY));
   if (omp_requires & OMP_REQ_SELF_MAPS)
     omp_requires_mask
-	  = (enum omp_requires) (omp_requires_mask | OMP_REQUIRES_SELF_MAPS);
+      = (enum omp_requires) (omp_requires_mask | int (OMP_REQUIRES_SELF_MAPS));
   if (omp_requires & OMP_REQ_DYNAMIC_ALLOCATORS)
-    omp_requires_mask = (enum omp_requires) (omp_requires_mask
-					     | OMP_REQUIRES_DYNAMIC_ALLOCATORS);
+    omp_requires_mask
+      = (enum omp_requires) (omp_requires_mask
+			     | int (OMP_REQUIRES_DYNAMIC_ALLOCATORS));
   /* Do the parse tree dump.  */
   gfc_current_ns = flag_dump_fortran_original ? gfc_global_ns_list : NULL;
 
@@ -7587,5 +7971,18 @@ is_oacc (gfc_state_data *sd)
 
     default:
       return false;
+    }
+}
+
+/* Return true if ST is a declarative OpenMP statement.  */
+bool
+is_omp_declarative_stmt (gfc_statement st)
+{
+  switch (st)
+    {
+      case_omp_decl:
+	return true;
+      default:
+	return false;
     }
 }

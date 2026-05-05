@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -21,6 +21,8 @@
 
 #include "rust-ast-lower-base.h"
 #include "rust-ast-lower-expr.h"
+#include "rust-hir-path.h"
+#include "rust-type.h"
 
 namespace Rust {
 namespace HIR {
@@ -64,7 +66,8 @@ class ASTLoweringType : public ASTLoweringBase
 
 public:
   static HIR::Type *translate (AST::Type &type,
-			       bool default_to_static_lifetime = false);
+			       bool default_to_static_lifetime = false,
+			       bool impl_trait_allowed = false);
 
   void visit (AST::BareFunctionType &fntype) override;
   void visit (AST::TupleType &tuple) override;
@@ -78,16 +81,18 @@ public:
   void visit (AST::NeverType &type) override;
   void visit (AST::TraitObjectTypeOneBound &type) override;
   void visit (AST::TraitObjectType &type) override;
+  void visit (AST::ParenthesisedType &type) override;
+  void visit (AST::ImplTraitType &type) override;
+  void visit (AST::ImplTraitTypeOneBound &type) override;
+
+  void emit_impl_trait_error (location_t locus);
 
 private:
-  ASTLoweringType (bool default_to_static_lifetime)
-    : ASTLoweringBase (),
-      default_to_static_lifetime (default_to_static_lifetime),
-      translated (nullptr)
-  {}
+  ASTLoweringType (bool default_to_static_lifetime, bool impl_trait_allowed);
 
   /** Used when compiling const and static items. */
   bool default_to_static_lifetime;
+  bool impl_trait_allowed;
 
   HIR::Type *translated;
 };

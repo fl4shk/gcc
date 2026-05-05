@@ -1,5 +1,5 @@
 /* Backend support for Fortran 95 basic types and derived types.
-   Copyright (C) 2002-2025 Free Software Foundation, Inc.
+   Copyright (C) 2002-2026 Free Software Foundation, Inc.
    Contributed by Paul Brook <paul@nowt.org>
    and Steven Bosscher <s.bosscher@student.tudelft.nl>
 
@@ -39,7 +39,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "dwarf2out.h"	/* For struct array_descr_info.  */
 #include "attribs.h"
 #include "alias.h"
-
+
 
 #if (GFC_MAX_DIMENSIONS < 10)
 #define GFC_RANK_DIGITS 1
@@ -800,6 +800,9 @@ gfc_init_kinds (void)
 
   gfc_index_integer_kind = get_int_kind_from_name (PTRDIFF_TYPE);
 
+  if (flag_external_blas64 && gfc_index_integer_kind != gfc_integer_8_kind)
+    gfc_fatal_error ("-fexternal-blas64 requires a 64-bit system");
+
   /* Pick a kind the same size as the C "int" type.  */
   gfc_c_int_kind = INT_TYPE_SIZE / 8;
 
@@ -1132,6 +1135,7 @@ gfc_init_types (void)
     {
       type = gfc_build_uint_type (gfc_character_kinds[index].bit_size);
       type = build_qualified_type (type, TYPE_UNQUALIFIED);
+      TYPE_STRING_FLAG (type) = 1;
       snprintf (name_buf, sizeof(name_buf), "character(kind=%d)",
 		gfc_character_kinds[index].kind);
       PUSH_TYPE (name_buf, type);
@@ -1139,11 +1143,6 @@ gfc_init_types (void)
       gfc_pcharacter_types[index] = build_pointer_type (type);
     }
   gfc_character1_type_node = gfc_character_types[0];
-
-  /* The middle end only recognizes a single unsigned type.  For
-     compatibility of existing test cases, let's just use the
-     character type.  The reader of tree dumps is expected to be able
-     to deal with this.  */
 
   if (flag_unsigned)
     {
@@ -1159,18 +1158,26 @@ gfc_init_types (void)
 		  break;
 		}
 	    }
-	  if (index_char > 0)
+	  if (index_char > -1)
 	    {
-	      gfc_unsigned_types[index] = gfc_character_types[index_char];
+	      type = gfc_character_types[index_char];
+	      if (TYPE_STRING_FLAG (type))
+		{
+		  type = build_distinct_type_copy (type);
+		  TYPE_CANONICAL (type)
+		    = TYPE_CANONICAL (gfc_character_types[index_char]);
+		}
+	      else
+		type = build_variant_type_copy (type);
+	      TYPE_NAME (type) = NULL_TREE;
+	      TYPE_STRING_FLAG (type) = 0;
 	    }
 	  else
-	    {
-	      type = gfc_build_unsigned_type (&gfc_unsigned_kinds[index]);
-	      gfc_unsigned_types[index] = type;
-	      snprintf (name_buf, sizeof(name_buf), "unsigned(kind=%d)",
-			gfc_integer_kinds[index].kind);
-	      PUSH_TYPE (name_buf, type);
-	    }
+	    type = gfc_build_unsigned_type (&gfc_unsigned_kinds[index]);
+	  gfc_unsigned_types[index] = type;
+	  snprintf (name_buf, sizeof(name_buf), "unsigned(kind=%d)",
+		    gfc_integer_kinds[index].kind);
+	  PUSH_TYPE (name_buf, type);
 	}
     }
 
@@ -1274,7 +1281,7 @@ gfc_get_pchar_type (int kind)
   return index < 0 ? 0 : gfc_pcharacter_types[index];
 }
 
-
+
 /* Create a character type with the given kind and length.  */
 
 tree
@@ -1310,7 +1317,7 @@ gfc_get_character_type (int kind, gfc_charlen * cl)
 
   return gfc_get_character_type_len (kind, len);
 }
-
+
 /* Convert a basic type.  This will be an array for character types.  */
 
 tree
@@ -1410,7 +1417,7 @@ gfc_typenode_for_spec (gfc_typespec * spec, int codim)
     }
   return basetype;
 }
-
+
 /* Build an INT_CST for constant expressions, otherwise return NULL_TREE.  */
 
 static tree
@@ -1423,7 +1430,7 @@ gfc_conv_array_bound (gfc_expr * expr)
   /* Otherwise return NULL.  */
   return NULL_TREE;
 }
-
+
 /* Return the type of an element of the array.  Note that scalar coarrays
    are special.  In particular, for GFC_ARRAY_TYPE_P, the original argument
    (with POINTER_TYPE stripped) is returned.  */
@@ -1463,7 +1470,7 @@ gfc_get_element_type (tree type)
 
   return element;
 }
-
+
 /* Build an array.  This function is called from gfc_sym_type().
    Actually returns array descriptor type.
 
@@ -1628,14 +1635,22 @@ gfc_build_array_type (tree type, gfc_array_spec * as,
     akind = contiguous ? GFC_ARRAY_ASSUMED_SHAPE_CONT
 		       : GFC_ARRAY_ASSUMED_SHAPE;
   else if (as->type == AS_ASSUMED_RANK)
-    akind = contiguous ? GFC_ARRAY_ASSUMED_RANK_CONT
-		       : GFC_ARRAY_ASSUMED_RANK;
+    {
+      if (akind == GFC_ARRAY_ALLOCATABLE)
+	akind = GFC_ARRAY_ASSUMED_RANK_ALLOCATABLE;
+      else if (akind == GFC_ARRAY_POINTER || akind == GFC_ARRAY_POINTER_CONT)
+	akind = contiguous ? GFC_ARRAY_ASSUMED_RANK_POINTER_CONT
+			   : GFC_ARRAY_ASSUMED_RANK_POINTER;
+      else
+	akind = contiguous ? GFC_ARRAY_ASSUMED_RANK_CONT
+			   : GFC_ARRAY_ASSUMED_RANK;
+    }
   return gfc_get_array_type_bounds (type, as->rank == -1
 					  ? GFC_MAX_DIMENSIONS : as->rank,
 				    corank, lbound, ubound, 0, akind,
 				    restricted);
 }
-
+
 /* Returns the struct descriptor_dimension type.  */
 
 static tree
@@ -2268,7 +2283,7 @@ gfc_get_array_type_bounds (tree etype, int dimen, int codimen, tree * lbound,
 
   return fat_type;
 }
-
+
 /* Build a pointer type. This function is called from gfc_sym_type().  */
 
 static tree
@@ -2443,7 +2458,7 @@ gfc_nonrestricted_type (tree t)
   return ret;
 }
 
-
+
 /* Return the type for a symbol.  Special handling is required for character
    types to get the correct level of indirection.
    For functions return the return type.
@@ -2572,7 +2587,7 @@ gfc_sym_type (gfc_symbol * sym, bool is_bind_c)
 
   return (type);
 }
-
+
 /* Layout and output debug info for a record type.  */
 
 void
@@ -2587,7 +2602,7 @@ gfc_finish_type (tree type)
   rest_of_type_compilation (type, 1);
   rest_of_decl_compilation (decl, 1, 0);
 }
-
+
 /* Add a field of given NAME and TYPE to the context of a UNION_TYPE
    or RECORD_TYPE pointed to by CONTEXT.  The new field is chained
    to the end of the field list pointed to by *CHAIN.
@@ -2958,9 +2973,10 @@ gfc_get_derived_type (gfc_symbol * derived, int codimen)
     }
 
   if (derived->components
-	&& derived->components->ts.type == BT_DERIVED
-	&& strcmp (derived->components->name, "_data") == 0
-	&& derived->components->ts.u.derived->attr.unlimited_polymorphic)
+      && derived->components->ts.type == BT_DERIVED
+      && startswith (derived->name, "__class")
+      && strcmp (derived->components->name, "_data") == 0
+      && derived->components->ts.u.derived->attr.unlimited_polymorphic)
     unlimited_entity = true;
 
   /* Go through the derived type components, building them as
@@ -3067,11 +3083,24 @@ gfc_get_derived_type (gfc_symbol * derived, int codimen)
 	  if (c->attr.pointer || c->attr.allocatable || c->attr.pdt_array)
 	    {
 	      enum gfc_array_kind akind;
-	      if (c->attr.pointer)
+	      bool is_ptr = ((c == derived->components
+			      && derived->components->ts.type == BT_DERIVED
+			      && startswith (derived->name, "__class")
+			      && (strcmp (derived->components->name, "_data")
+				  == 0))
+			     ? c->attr.class_pointer : c->attr.pointer);
+	      if (is_ptr)
 		akind = c->attr.contiguous ? GFC_ARRAY_POINTER_CONT
 					   : GFC_ARRAY_POINTER;
-	      else
+	      else if (c->attr.allocatable)
 		akind = GFC_ARRAY_ALLOCATABLE;
+	      else if (c->as->type == AS_ASSUMED_RANK)
+		akind = GFC_ARRAY_ASSUMED_RANK;
+	      else
+		/* FIXME – see PR fortran/104651.  Additionally, the following
+		   gfc_build_array_type should use !is_ptr instead of
+		   c->attr.pointer and codim unconditionally without '? :'. */
+		akind = GFC_ARRAY_ASSUMED_SHAPE;
 	      /* Pointers to arrays aren't actually pointer types.  The
 		 descriptors are separate, but the data is common.  Every
 		 array pointer in a coarray derived type needs to provide space
@@ -3162,7 +3191,7 @@ copy_derived_types:
     for (c = derived->components; c; c = c->next)
       {
 	/* Do not add a caf_token field for class container components.  */
-	if ((codimen || coarray_flag) && !c->attr.dimension
+	if (codimen && coarray_flag && !c->attr.dimension
 	    && !c->attr.codimension && (c->attr.allocatable || c->attr.pointer)
 	    && !derived->attr.is_class)
 	  {
@@ -3206,18 +3235,40 @@ gfc_return_by_reference (gfc_symbol * sym)
 
   /* Possibly return complex numbers by reference for g77 compatibility.
      We don't do this for calls to intrinsics (as the library uses the
-     -fno-f2c calling convention), nor for calls to functions which always
+     -fno-f2c calling convention) except for calls to specific wrappers
+     (_gfortran_f2c_specific_*), nor for calls to functions which always
      require an explicit interface, as no compatibility problems can
      arise there.  */
   if (flag_f2c && sym->ts.type == BT_COMPLEX
       && !sym->attr.pointer
       && !sym->attr.allocatable
-      && !sym->attr.intrinsic && !sym->attr.always_explicit)
+      && !sym->attr.always_explicit)
     return 1;
 
   return 0;
 }
-
+
+static tree
+gfc_get_entry_result_type (gfc_symbol *sym)
+{
+  tree type;
+
+  type = gfc_sym_type (sym->result);
+
+  /* Mixed ENTRY master unions must use the ABI return type of each entry.
+     Under -ff2c, default REAL entries return C double even though their
+     Fortran result symbol remains default REAL.  */
+  if (flag_f2c
+      && sym->ts.type == BT_REAL
+      && sym->ts.kind == gfc_default_real_kind
+      && !sym->attr.pointer
+      && !sym->attr.allocatable
+      && !sym->attr.always_explicit)
+    type = gfc_get_real_type (gfc_default_double_kind);
+
+  return type;
+}
+
 static tree
 gfc_get_mixed_entry_union (gfc_namespace *ns)
 {
@@ -3246,7 +3297,8 @@ gfc_get_mixed_entry_union (gfc_namespace *ns)
       if (el == el2)
 	gfc_add_field_to_struct_1 (type,
 				   get_identifier (el->sym->result->name),
-				   gfc_sym_type (el->sym->result), &chain);
+				   gfc_get_entry_result_type (el->sym),
+				   &chain);
     }
 
   /* Finish off the type.  */
@@ -3254,7 +3306,7 @@ gfc_get_mixed_entry_union (gfc_namespace *ns)
   TYPE_DECL_SUPPRESS_DEBUG (TYPE_STUB_DECL (type)) = 1;
   return type;
 }
-
+
 /* Create a "fn spec" based on the formal arguments;
    cf. create_function_arglist.  */
 
@@ -3411,6 +3463,7 @@ gfc_get_function_type (gfc_symbol * sym, gfc_actual_arglist *actual_args,
 	}
     }
   if (sym->backend_decl == error_mark_node && actual_args != NULL
+      && sym->ts.interface == NULL
       && sym->formal == NULL && (sym->attr.proc == PROC_EXTERNAL
 				 || sym->attr.proc == PROC_UNKNOWN))
     gfc_get_formal_from_actual_arglist (sym, actual_args);
@@ -3475,15 +3528,14 @@ gfc_get_function_type (gfc_symbol * sym, gfc_actual_arglist *actual_args,
 
 	  vec_safe_push (hidden_typelist, type);
 	}
-      /* For scalar intrinsic types, VALUE passes the value,
+      /* For scalar intrinsic types or derived types, VALUE passes the value,
 	 hence, the optional status cannot be transferred via a NULL pointer.
 	 Thus, we will use a hidden argument in that case.  */
       if (arg
 	  && arg->attr.optional
 	  && arg->attr.value
 	  && !arg->attr.dimension
-	  && arg->ts.type != BT_CLASS
-	  && !gfc_bt_struct (arg->ts.type))
+	  && arg->ts.type != BT_CLASS)
 	vec_safe_push (typelist, boolean_type_node);
       /* Coarrays which are descriptorless or assumed-shape pass with
 	 -fcoarray=lib the token and the offset as hidden arguments.  */
@@ -3575,7 +3627,7 @@ arg_type_list_done:
 
   return type;
 }
-
+
 /* Language hooks for middle-end access to type nodes.  */
 
 /* Return an integer type with BITS bits of precision,
@@ -3754,15 +3806,22 @@ gfc_get_array_descr_info (const_tree type, struct array_descr_info *info)
     t = fold_build_pointer_plus (t, data_off);
   t = build1 (NOP_EXPR, build_pointer_type (ptr_type_node), t);
   info->data_location = build1 (INDIRECT_REF, ptr_type_node, t);
-  if (GFC_TYPE_ARRAY_AKIND (type) == GFC_ARRAY_ALLOCATABLE)
+  enum gfc_array_kind akind = GFC_TYPE_ARRAY_AKIND (type);
+  if (akind == GFC_ARRAY_ALLOCATABLE
+      || akind == GFC_ARRAY_ASSUMED_RANK_ALLOCATABLE)
     info->allocated = build2 (NE_EXPR, logical_type_node,
 			      info->data_location, null_pointer_node);
-  else if (GFC_TYPE_ARRAY_AKIND (type) == GFC_ARRAY_POINTER
-	   || GFC_TYPE_ARRAY_AKIND (type) == GFC_ARRAY_POINTER_CONT)
+  else if (akind == GFC_ARRAY_POINTER
+	   || akind == GFC_ARRAY_POINTER_CONT
+	   || akind == GFC_ARRAY_ASSUMED_RANK_POINTER
+	   || akind == GFC_ARRAY_ASSUMED_RANK_POINTER_CONT)
     info->associated = build2 (NE_EXPR, logical_type_node,
 			       info->data_location, null_pointer_node);
-  if ((GFC_TYPE_ARRAY_AKIND (type) == GFC_ARRAY_ASSUMED_RANK
-       || GFC_TYPE_ARRAY_AKIND (type) == GFC_ARRAY_ASSUMED_RANK_CONT)
+  if ((akind == GFC_ARRAY_ASSUMED_RANK
+       || akind == GFC_ARRAY_ASSUMED_RANK_CONT
+       || akind == GFC_ARRAY_ASSUMED_RANK_ALLOCATABLE
+       || akind == GFC_ARRAY_ASSUMED_RANK_POINTER
+       || akind == GFC_ARRAY_ASSUMED_RANK_POINTER_CONT)
       && dwarf_version >= 5)
     {
       rank = 1;
@@ -3793,8 +3852,8 @@ gfc_get_array_descr_info (const_tree type, struct array_descr_info *info)
 					       dim_off, upper_suboff));
       t = build1 (INDIRECT_REF, gfc_array_index_type, t);
       info->dimen[dim].upper_bound = t;
-      if (GFC_TYPE_ARRAY_AKIND (type) == GFC_ARRAY_ASSUMED_SHAPE
-	  || GFC_TYPE_ARRAY_AKIND (type) == GFC_ARRAY_ASSUMED_SHAPE_CONT)
+      if (akind == GFC_ARRAY_ASSUMED_SHAPE
+	  || akind == GFC_ARRAY_ASSUMED_SHAPE_CONT)
 	{
 	  /* Assumed shape arrays have known lower bounds.  */
 	  info->dimen[dim].upper_bound

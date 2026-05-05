@@ -1,5 +1,5 @@
 /* libgcc routines for RL78
-   Copyright (C) 2005-2025 Free Software Foundation, Inc.
+   Copyright (C) 2005-2026 Free Software Foundation, Inc.
    Contributed by Red Hat.
 
    This file is part of GCC.
@@ -35,7 +35,7 @@ typedef int           word_type     __attribute__ ((mode (__word__)));
 #define C3(a,b,c) C3B(a,b,c)
 
 /* See the comment by the definition of LIBGCC2_UNITS_PER_WORD in
-   m32c.h for why we are creating extra versions of some of the
+   msp430.h for why we are creating extra versions of some of the
    functions defined in libgcc2.c.  */
 
 #define LIBGCC2_UNITS_PER_WORD 2

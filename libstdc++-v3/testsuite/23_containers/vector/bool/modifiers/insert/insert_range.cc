@@ -35,28 +35,34 @@ do_test()
   VERIFY( eq(v, a) );
   v.clear();
   v.shrink_to_fit();
-  v.insert_range(v.begin(), Range(a, a+3));
-  v.insert_range(v.end(), Range(a+6, a+9));
-  v.insert_range(v.begin()+3, Range(a+3, a+6));
+  auto it = v.insert_range(v.begin(), Range(a, a+3));
+  VERIFY( it == v.begin() );
+  it = v.insert_range(v.end(), Range(a+6, a+9));
+  VERIFY( it == v.begin()+3 );
+  it = v.insert_range(v.begin()+3, Range(a+3, a+6));
+  VERIFY( it == v.begin()+3 );
   VERIFY( eq(v, a) );
   v.resize(3);
-  v.insert_range(v.begin()+1, Range(a+4, a+9));
-  v.insert_range(v.begin()+1, Range(a+1, a+4));
+  it = v.insert_range(v.begin()+1, Range(a+4, a+9));
+  VERIFY( it == v.begin()+1 );
+  it = v.insert_range(v.begin()+1, Range(a+1, a+4));
+  VERIFY( it == v.begin()+1 );
   v.resize(9);
   VERIFY( eq(v, a) );
-  v.insert_range(v.begin(), Range(a, a));
+  it = v.insert_range(v.begin(), Range(a, a));
+  VERIFY( it == v.begin() );
   VERIFY( eq(v, a) );
 }
 
 template<typename Range>
-void
+constexpr void
 do_test_a()
 {
   do_test<Range, std::allocator<bool>>();
   do_test<Range, __gnu_test::SimpleAllocator<bool>>();
 }
 
-bool
+constexpr bool
 test_ranges()
 {
   using namespace __gnu_test;
@@ -78,9 +84,9 @@ test_ranges()
 
   // Not lvalue-convertible to bool
   struct C {
-    C(bool v) : val(v) { }
-    operator bool() && { return val; }
-    bool operator==(bool b) const { return b == val; }
+    constexpr C(bool v) : val(v) { }
+    constexpr operator bool() && { return val; }
+    constexpr bool operator==(bool b) const { return b == val; }
     bool val;
   };
   using rvalue_input_range = test_range<C, input_iterator_wrapper_rval>;
@@ -89,16 +95,8 @@ test_ranges()
   return true;
 }
 
-constexpr bool
-test_constexpr()
-{
-  // XXX: this doesn't test the non-forward_range code paths are constexpr.
-  do_test<std::span<bool>, std::allocator<bool>>();
-  return true;
-}
-
 int main()
 {
   test_ranges();
-  static_assert( test_constexpr() );
+  static_assert( test_ranges() );
 }

@@ -1,5 +1,5 @@
 /* typeinfo.cc -- D runtime type identification.
-   Copyright (C) 2013-2025 Free Software Foundation, Inc.
+   Copyright (C) 2013-2026 Free Software Foundation, Inc.
 
 GCC is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "dmd/scope.h"
 #include "dmd/template.h"
 #include "dmd/target.h"
+#include "dmd/typinf.h"
 
 #include "tree.h"
 #include "fold-const.h"
@@ -466,7 +467,7 @@ class TypeInfoVisitor : public Visitor
 
 	/* Fill in the vtbl[].  */
 	if (!cd->isInterfaceDeclaration ())
-	  b->fillVtbl (cd, &b->vtbl, 1);
+	  dmd::fillVtbl (b, cd, &b->vtbl, 1);
 
 	/* ClassInfo for the interface.  */
 	value = build_address (get_classinfo_decl (id));
@@ -488,14 +489,14 @@ class TypeInfoVisitor : public Visitor
 	CONSTRUCTOR_APPEND_ELT (v, size_int (3), size_int (b->offset));
 
 	/* Add to the array of interfaces.  */
-	value = build_constructor (vtbl_interface_type_node, v);
+	value = build_padded_constructor (vtbl_interface_type_node, v);
 	CONSTRUCTOR_APPEND_ELT (elms, size_int (i), value);
       }
 
     tree domain = size_int (cd->vtblInterfaces->length - 1);
     tree arrtype = build_array_type (vtbl_interface_type_node,
 				     build_index_type (domain));
-    return build_constructor (arrtype, elms);
+    return build_padded_constructor (arrtype, elms);
   }
 
   /* Write out the interfacing vtable[] of base class BCD that will be accessed
@@ -516,7 +517,7 @@ class TypeInfoVisitor : public Visitor
       return;
 
     /* Fill bvtbl with the functions we want to put out.  */
-    if (cd != bcd && !bs->fillVtbl (cd, &bvtbl, 0))
+    if (cd != bcd && !dmd::fillVtbl (bs, cd, &bvtbl, 0))
       return;
 
     /* First entry is struct Interface reference.  */
@@ -541,7 +542,7 @@ class TypeInfoVisitor : public Visitor
 
     tree vtbldomain = build_index_type (size_int (id->vtbl.length - 1));
     tree vtbltype = build_array_type (vtable_entry_type, vtbldomain);
-    tree value = build_constructor (vtbltype, elms);
+    tree value = build_padded_constructor (vtbltype, elms);
     this->layout_field (value);
   }
 
@@ -721,14 +722,17 @@ public:
     this->layout_field (build_typeinfo (d->loc, ti->next));
 
     /* Static array length.  */
-    this->layout_field (size_int (ti->dim->toInteger ()));
+    this->layout_field (size_int (dmd::toInteger (ti->dim)));
   }
 
   /* Layout of TypeInfo_AssociativeArray is:
 	void **__vptr;
 	void *__monitor;
 	TypeInfo value;
-	TypeInfo key;  */
+	TypeInfo key;
+	TypeInfo entry;
+	bool function(in void*, in void*) xopEquals;
+	hash_t function(in void*) xtoHash;  */
 
   void visit (TypeInfoAssociativeArrayDeclaration *d) final override
   {
@@ -742,6 +746,22 @@ public:
 
     /* TypeInfo for index of type.  */
     this->layout_field (build_typeinfo (d->loc, ti->index));
+
+    /* TypeInfo for the key/value pair.  */
+    if (d->entry != NULL)
+      this->layout_field (build_typeinfo (d->loc, d->entry));
+    else
+      this->layout_field (null_pointer_node);
+
+    /* bool function(in void*, in void*) xopEquals;  */
+    tree xeq = (d->xopEqual) ? build_address (get_symbol_decl (d->xopEqual))
+      : null_pointer_node;
+    this->layout_field (xeq);
+
+    /* hash_t function (in void*) xtoHash;  */
+    tree xhash = (d->xtoHash) ? build_address (get_symbol_decl (d->xtoHash))
+      : null_pointer_node;
+    this->layout_field (xhash);
   }
 
   /* Layout of TypeInfo_Vector is:
@@ -900,18 +920,15 @@ public:
 	      }
 	  }
 
-	if (cd->isAbstract ())
+	if (dmd::isAbstract (cd))
 	  flags |= ClassFlags::isAbstract;
 
 	for (ClassDeclaration *bcd = cd; bcd; bcd = bcd->baseClass)
 	  {
-	    if (!bcd->members)
-	      continue;
-
-	    for (size_t i = 0; i < bcd->members->length; i++)
+	    for (size_t i = 0; i < bcd->fields.length; i++)
 	      {
-		Dsymbol *sm = (*bcd->members)[i];
-		if (sm->hasPointers ())
+		VarDeclaration *vd = bcd->fields[i];
+		if (dmd::hasPointers (vd))
 		  goto Lhaspointers;
 	      }
 	  }
@@ -1073,6 +1090,9 @@ public:
     if (!sd->members)
       return;
 
+    if (sd->semanticRun () < PASS::semantic3done)
+      dmd::semanticTypeInfoMembers (sd);
+
     /* Mangled name of the struct declaration.  */
     this->layout_string (ti->deco);
 
@@ -1122,7 +1142,7 @@ public:
       this->layout_field (null_pointer_node);
 
     /* uint m_align;  */
-    this->layout_field (build_integer_cst (ti->alignsize (), d_uint_type));
+    this->layout_field (build_integer_cst (dmd::alignsize (ti), d_uint_type));
 
     /* immutable(void)* xgetRTInfo;  */
     if (sd->getRTInfo)
@@ -1152,7 +1172,7 @@ public:
 	CONSTRUCTOR_APPEND_ELT (elms, size_int (i),
 				build_typeinfo (d->loc, arg->type));
       }
-    tree ctor = build_constructor (build_ctype (satype), elms);
+    tree ctor = build_padded_constructor (build_ctype (satype), elms);
     tree decl = this->internal_reference (ctor);
 
     tree length = size_int (ti->arguments->length);
@@ -1217,7 +1237,7 @@ base_vtable_offset (ClassDeclaration *cd, BaseClass *bc)
       for (size_t k = 0; k < cd2->vtblInterfaces->length; k++)
 	{
 	  BaseClass *bs = (*cd2->vtblInterfaces)[k];
-	  if (bs->fillVtbl (cd, NULL, 0))
+	  if (dmd::fillVtbl (bs, cd, NULL, 0))
 	    {
 	      if (bc == bs)
 		return csymoffset;
@@ -1434,6 +1454,15 @@ check_typeinfo_type (const Loc &loc, Scope *sc, Expression *expr)
 	    error_at (make_location_t (loc),
 		      "%<object.TypeInfo%> cannot be used with %<-fno-rtti%>");
 
+	  if (expr != NULL || !warned)
+	    {
+	      /* Print the location of where the error came from.  */
+	      if (sc && sc->tinst)
+		dmd::printInstantiationTrace (sc->tinst);
+
+	      global.errors++;
+	    }
+
 	  warned = 1;
 	}
     }
@@ -1513,6 +1542,10 @@ layout_cpp_typeinfo (ClassDeclaration *cd)
   d_finish_decl (decl);
 }
 
+/* Cached instance of class `__cpp_type_info_ptr`.  */
+
+static hash_map<ClassDeclaration *, tree> *cpp_type_info_ptrs;
+
 /* Get the VAR_DECL of the __cpp_type_info_ptr for DECL.  If this does not yet
    exist, create it.  The __cpp_type_info_ptr decl is then initialized with a
    pointer to the C++ type_info for the given class.  */
@@ -1520,10 +1553,12 @@ layout_cpp_typeinfo (ClassDeclaration *cd)
 tree
 get_cpp_typeinfo_decl (ClassDeclaration *decl)
 {
-  gcc_assert (decl->isCPPclass ());
+  hash_map_maybe_create<hm_ggc> (cpp_type_info_ptrs);
 
-  if (decl->cpp_type_info_ptr_sym)
-    return decl->cpp_type_info_ptr_sym;
+  if (tree *tiptr = cpp_type_info_ptrs->get (decl))
+    return *tiptr;
+
+  gcc_assert (decl->isCPPclass ());
 
   if (!tinfo_types[TK_CPPTI_TYPE])
     make_internal_typeinfo (TK_CPPTI_TYPE,
@@ -1533,24 +1568,24 @@ get_cpp_typeinfo_decl (ClassDeclaration *decl)
   tree ident = mangle_internal_decl (decl, "_cpp_type_info_ptr", "");
   tree type = tinfo_types[TK_CPPTI_TYPE];
 
-  decl->cpp_type_info_ptr_sym = declare_extern_var (ident, type);
-  DECL_LANG_SPECIFIC (decl->cpp_type_info_ptr_sym) = build_lang_decl (NULL);
+  tree cpp_type_info = declare_extern_var (ident, type);
+  cpp_type_info_ptrs->put (decl, cpp_type_info);
+  DECL_LANG_SPECIFIC (cpp_type_info) = build_lang_decl (NULL);
 
   /* Class is a reference, want the record type.  */
-  DECL_CONTEXT (decl->cpp_type_info_ptr_sym)
-    = TREE_TYPE (build_ctype (decl->type));
-  TREE_READONLY (decl->cpp_type_info_ptr_sym) = 1;
+  DECL_CONTEXT (cpp_type_info) = TREE_TYPE (build_ctype (decl->type));
+  TREE_READONLY (cpp_type_info) = 1;
 
   /* Layout the initializer and emit the symbol.  */
   layout_cpp_typeinfo (decl);
 
-  return decl->cpp_type_info_ptr_sym;
+  return cpp_type_info;
 }
 
 /* Get the exact TypeInfo for TYPE, if it doesn't exist, create it.  */
 
 void
-create_typeinfo (Type *type, Module *mod)
+create_typeinfo (Type *type, Scope *sc)
 {
   if (!Type::dtypeinfo)
     create_frontend_tinfo_types ();
@@ -1558,6 +1593,9 @@ create_typeinfo (Type *type, Module *mod)
   /* Do this since not all Type's are merged.  */
   Type *t = dmd::merge2 (type);
   Identifier *ident;
+
+  if (TypeAArray *ta = t->isTypeAArray ())
+    t = dmd::makeNakedAssociativeArray (ta);
 
   if (!t->vtinfo)
     {
@@ -1636,9 +1674,12 @@ create_typeinfo (Type *type, Module *mod)
 	    {
 	      ident = Identifier::idPool ("TypeInfo_AssociativeArray");
 	      make_internal_typeinfo (tk, ident, ptr_type_node, ptr_type_node,
-				      NULL);
+				      ptr_type_node, ptr_type_node,
+				      ptr_type_node, NULL);
 	    }
-	  t->vtinfo = TypeInfoAssociativeArrayDeclaration::create (t);
+	  t->vtinfo = sc && have_typeinfo_p (Type::typeinfoassociativearray)
+	    ? dmd::getTypeInfoAssocArrayDeclaration (t->isTypeAArray (), sc)
+	    : TypeInfoAssociativeArrayDeclaration::create (t);
 	  break;
 
 	case TK_STRUCT_TYPE:
@@ -1711,6 +1752,7 @@ create_typeinfo (Type *type, Module *mod)
       if (!builtin_typeinfo_p (t))
 	{
 	  /* Find module that will go all the way to an object file.  */
+	  Module *mod = sc ? sc->_module->importedFrom : NULL;
 	  if (mod)
 	    mod->members->push (t->vtinfo);
 	  else
@@ -1722,115 +1764,6 @@ create_typeinfo (Type *type, Module *mod)
     type->vtinfo = t->vtinfo;
 
   gcc_assert (type->vtinfo != NULL);
-}
-
-/* Implements a visitor interface to check whether a type is speculative.
-   TypeInfo_Struct would reference the members of the struct it is representing
-   (e.g: opEquals via xopEquals field), so if it's instantiated in speculative
-   context, TypeInfo creation should also be stopped to avoid possible
-   `unresolved symbol' linker errors.  */
-
-class SpeculativeTypeVisitor : public Visitor
-{
-  using Visitor::visit;
-
-  bool result_;
-
-public:
-  SpeculativeTypeVisitor (void)
-  {
-    this->result_ = false;
-  }
-
-  bool result (void)
-  {
-    return this->result_;
-  }
-
-  void visit (Type *t) final override
-  {
-    Type *tb = t->toBasetype ();
-    if (tb != t)
-      tb->accept (this);
-  }
-
-  void visit (TypeNext *t) final override
-  {
-    if (t->next)
-      t->next->accept (this);
-  }
-
-  void visit (TypeBasic *) final override
-  {
-  }
-
-  void visit (TypeVector *t) final override
-  {
-    t->basetype->accept (this);
-  }
-
-  void visit (TypeAArray *t) final override
-  {
-    t->index->accept (this);
-    visit ((TypeNext *) t);
-  }
-
-  void visit (TypeFunction *t) final override
-  {
-    visit ((TypeNext *) t);
-  }
-
-  void visit (TypeStruct *t) final override
-  {
-    StructDeclaration *sd = t->sym;
-    if (TemplateInstance *ti = sd->isInstantiated ())
-      {
-	if (!ti->needsCodegen ())
-	  {
-	    if (ti->minst || sd->requestTypeInfo ())
-	      return;
-
-	    this->result_ |= true;
-	  }
-      }
-  }
-
-  void visit (TypeClass *t) final override
-  {
-    ClassDeclaration *cd = t->sym;
-    if (TemplateInstance *ti = cd->isInstantiated ())
-      {
-	if (!ti->needsCodegen () && !ti->minst)
-	  {
-	    this->result_ |= true;
-	  }
-      }
-  }
-
-  void visit (TypeTuple *t) final override
-  {
-    if (!t->arguments)
-      return;
-
-    for (size_t i = 0; i < t->arguments->length; i++)
-      {
-	Type *tprm = (*t->arguments)[i]->type;
-	if (tprm)
-	  tprm->accept (this);
-	if (this->result_)
-	  return;
-      }
-  }
-};
-
-/* Return true if type was instantiated in a speculative context.  */
-
-bool
-speculative_type_p (Type *t)
-{
-  SpeculativeTypeVisitor v = SpeculativeTypeVisitor ();
-  t->accept (&v);
-  return v.result ();
 }
 
 #include "gt-d-typeinfo.h"

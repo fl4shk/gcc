@@ -1,5 +1,5 @@
 /* Functions to determine/estimate number of iterations of a loop.
-   Copyright (C) 2004-2025 Free Software Foundation, Inc.
+   Copyright (C) 2004-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -47,11 +47,6 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple-range.h"
 #include "sreal.h"
 
-
-/* The maximum number of dominator BBs we search for conditions
-   of loop header copies we use for simplifying a conditional
-   expression.  */
-#define MAX_DOMINATORS_TO_WALK 8
 
 /*
 
@@ -441,7 +436,8 @@ determine_value_range (class loop *loop, tree type, tree var, mpz_t off,
       /* Now walk the dominators of the loop header and use the entry
 	 guards to refine the estimates.  */
       for (bb = loop->header;
-	   bb != ENTRY_BLOCK_PTR_FOR_FN (cfun) && cnt < MAX_DOMINATORS_TO_WALK;
+	   bb != ENTRY_BLOCK_PTR_FOR_FN (cfun)
+	     && cnt < param_max_niter_dominators_walk;
 	   bb = get_immediate_dominator (CDI_DOMINATORS, bb))
 	{
 	  edge e;
@@ -769,7 +765,8 @@ bound_difference (class loop *loop, tree x, tree y, bounds *bnds)
   /* Now walk the dominators of the loop header and use the entry
      guards to refine the estimates.  */
   for (bb = loop->header;
-       bb != ENTRY_BLOCK_PTR_FOR_FN (cfun) && cnt < MAX_DOMINATORS_TO_WALK;
+       bb != ENTRY_BLOCK_PTR_FOR_FN (cfun)
+	 && cnt < param_max_niter_dominators_walk;
        bb = get_immediate_dominator (CDI_DOMINATORS, bb))
     {
       if (!single_pred_p (bb))
@@ -988,8 +985,8 @@ number_of_iterations_ne (class loop *loop, tree type, affine_iv *iv,
      if BNDS->below in the result is nonnegative.  */
   if (tree_int_cst_sign_bit (iv->step))
     {
-      s = fold_convert (niter_type,
-			fold_build1 (NEGATE_EXPR, type, iv->step));
+      s = fold_build1 (NEGATE_EXPR, niter_type,
+		       fold_convert (niter_type, iv->step));
       c = fold_build2 (MINUS_EXPR, niter_type,
 		       fold_convert (niter_type, iv->base),
 		       fold_convert (niter_type, final));
@@ -1054,7 +1051,7 @@ number_of_iterations_ne (class loop *loop, tree type, affine_iv *iv,
       if (tree_int_cst_sign_bit (iv->step))
 	{
 	  cond = fold_build2 (GE_EXPR, boolean_type_node, iv->base, final);
-	  if (TREE_CODE (type) == INTEGER_TYPE)
+	  if (INTEGRAL_NB_TYPE_P (type))
 	    {
 	      /* Only when base - step doesn't overflow.  */
 	      t = TYPE_MAX_VALUE (type);
@@ -1071,7 +1068,7 @@ number_of_iterations_ne (class loop *loop, tree type, affine_iv *iv,
       else
 	{
 	  cond = fold_build2 (LE_EXPR, boolean_type_node, iv->base, final);
-	  if (TREE_CODE (type) == INTEGER_TYPE)
+	  if (INTEGRAL_NB_TYPE_P (type))
 	    {
 	      /* Only when base - step doesn't underflow.  */
 	      t = TYPE_MIN_VALUE (type);
@@ -1218,7 +1215,7 @@ number_of_iterations_lt_to_ne (tree type, affine_iv *iv0, affine_iv *iv1,
     }
 
   /* IV0 < IV1 does not loop if IV0->base >= IV1->base.  */
-  if (mpz_cmp (mmod, bnds->below) < 0)
+  if (fv_comp_no_overflow && mpz_cmp (mmod, bnds->below) < 0)
     noloop = boolean_false_node;
   else
     noloop = fold_build2 (GE_EXPR, boolean_type_node,
@@ -1633,8 +1630,8 @@ number_of_iterations_lt (class loop *loop, tree type, affine_iv *iv0,
   if (integer_nonzerop (iv0->step))
     step = fold_convert (niter_type, iv0->step);
   else
-    step = fold_convert (niter_type,
-			 fold_build1 (NEGATE_EXPR, type, iv1->step));
+    step = fold_build1 (NEGATE_EXPR, niter_type,
+			fold_convert (niter_type, iv1->step));
 
   /* If we can determine the final value of the control iv exactly, we can
      transform the condition to != comparison.  In particular, this will be
@@ -1752,14 +1749,21 @@ dump_affine_iv (FILE *file, affine_iv *iv)
   if (!integer_zerop (iv->step))
     fprintf (file, "[");
 
-  print_generic_expr (dump_file, iv->base, TDF_SLIM);
+  print_generic_expr (file, iv->base, TDF_SLIM);
 
   if (!integer_zerop (iv->step))
     {
       fprintf (file, ", + , ");
-      print_generic_expr (dump_file, iv->step, TDF_SLIM);
+      print_generic_expr (file, iv->step, TDF_SLIM);
       fprintf (file, "]%s", iv->no_overflow ? "(no_overflow)" : "");
     }
+}
+
+DEBUG_FUNCTION void
+debug (affine_iv *iv)
+{
+  dump_affine_iv (stderr, iv);
+  fputc ('\n', stderr);
 }
 
 /* Determine the number of iterations according to condition (for staying
@@ -2238,6 +2242,8 @@ build_cltz_expr (tree src, bool leading, bool define_at_zero)
 			      build_int_cst (integer_type_node, prec));
 	}
     }
+  else if (fn == NULL_TREE)
+    return NULL_TREE;
   else if (prec == 2 * lli_prec)
     {
       tree src1 = fold_convert (long_long_unsigned_type_node,
@@ -2319,6 +2325,48 @@ is_rshift_by_1 (gassign *stmt)
   return false;
 }
 
+/* Helper for number_of_iterations_cltz that uses ranger to determine
+   if SRC's range, shifted left (when LEFT_SHIFT is true) or right
+   by NUM_IGNORED_BITS, is guaranteed to be != 0 on LOOP's preheader
+   edge.
+   Return true if so or false otherwise.  */
+
+static bool
+shifted_range_nonzero_p (loop_p loop, tree src,
+			 bool left_shift, int num_ignored_bits)
+{
+  int_range_max r (TREE_TYPE (src));
+  gcc_assert (num_ignored_bits >= 0);
+
+  if (get_range_query (cfun)->range_on_edge
+      (r, loop_preheader_edge (loop), src)
+      && !r.varying_p ()
+      && !r.undefined_p ())
+    {
+      if (num_ignored_bits)
+	{
+	  range_op_handler op (left_shift ? LSHIFT_EXPR : RSHIFT_EXPR);
+	  int_range_max shifted_range (TREE_TYPE (src));
+	  wide_int shift_count = wi::shwi (num_ignored_bits,
+					   TYPE_PRECISION (TREE_TYPE
+							   (src)));
+	  int_range_max shift_amount
+	    (TREE_TYPE (src), shift_count, shift_count);
+
+	  if (op.fold_range (shifted_range, TREE_TYPE (src), r,
+			     shift_amount))
+	    r = shifted_range;
+	}
+
+      /* If the range does not contain zero we are good.  */
+      if (!range_includes_zero_p (r))
+	return true;
+    }
+
+  return false;
+}
+
+
 /* See comment below for number_of_iterations_bitcount.
    For c[lt]z, we have:
 
@@ -2388,7 +2436,7 @@ number_of_iterations_cltz (loop_p loop, edge exit,
 	  iv_2 = gimple_assign_rhs1 (test_value_stmt);
 	  tree rhs_type = TREE_TYPE (iv_2);
 	  if (TREE_CODE (iv_2) != SSA_NAME
-	      || TREE_CODE (rhs_type) != INTEGER_TYPE
+	      || !INTEGRAL_NB_TYPE_P (rhs_type)
 	      || (TYPE_PRECISION (rhs_type)
 		  != TYPE_PRECISION (test_value_type)))
 	    return false;
@@ -2436,6 +2484,9 @@ number_of_iterations_cltz (loop_p loop, edge exit,
   tree src = gimple_phi_arg_def (phi, loop_preheader_edge (loop)->dest_idx);
   int src_precision = TYPE_PRECISION (TREE_TYPE (src));
 
+  /* Save the original SSA name before preprocessing for ranger queries.  */
+  tree unshifted_src = src;
+
   /* Apply any needed preprocessing to src.  */
   int num_ignored_bits;
   if (left_shift)
@@ -2461,10 +2512,52 @@ number_of_iterations_cltz (loop_p loop, edge exit,
 
   expr = fold_convert (unsigned_type_node, expr);
 
-  tree assumptions = fold_build2 (NE_EXPR, boolean_type_node, src,
-				  build_zero_cst (TREE_TYPE (src)));
+  /* If the copy-header (ch) pass peeled one iteration we're shifting
+     SRC by preprocessing it above.
 
-  niter->assumptions = simplify_using_initial_conditions (loop, assumptions);
+     A loop like
+      if (bits)
+	{
+	  while (!(bits & 1))
+	    {
+	      bits >>= 1;
+	      cnt += 1;
+	    }
+	  return cnt;
+	}
+     ch (roughly) transforms into:
+      if (bits)
+	{
+	  if (!(bits & 1)
+	    {
+	      do
+		{
+		  bits >>= 1;
+		  cnt += 1;
+		} while (!(bits & 1));
+	    }
+	   else
+	     cnt = 1;
+	  return cnt;
+	}
+
+     Then, our preprocessed SRC (that is used for c[tl]z computation)
+     will be bits >> 1, and the assumption is bits >> 1 != 0.  */
+
+  tree assumptions;
+  if (shifted_range_nonzero_p (loop, unshifted_src,
+			       left_shift, num_ignored_bits))
+    assumptions = boolean_true_node;
+  else
+    {
+      /* If ranger couldn't prove the assumption, try
+	 simplify_using_initial_conditions.  */
+      assumptions = fold_build2 (NE_EXPR, boolean_type_node, src,
+				 build_zero_cst (TREE_TYPE (src)));
+      assumptions = simplify_using_initial_conditions (loop, assumptions);
+    }
+
+  niter->assumptions = assumptions;
   niter->may_be_zero = boolean_false_node;
   niter->niter = simplify_using_initial_conditions (loop, expr);
 
@@ -2989,13 +3082,23 @@ simplify_using_initial_conditions (class loop *loop, tree expr)
   if (TREE_CODE (expr) == INTEGER_CST)
     return expr;
 
+  value_range expr_range (TREE_TYPE (expr));
+  tree val;
+  if (TREE_TYPE (expr) == boolean_type_node
+      && get_range_query (cfun)->range_on_edge (expr_range,
+						loop_preheader_edge (loop),
+						expr)
+      && expr_range.singleton_p (&val))
+    return val;
+
   backup = expanded = expand_simple_operations (expr);
 
   /* Limit walking the dominators to avoid quadraticness in
      the number of BBs times the number of loops in degenerate
      cases.  */
   for (bb = loop->header;
-       bb != ENTRY_BLOCK_PTR_FOR_FN (cfun) && cnt < MAX_DOMINATORS_TO_WALK;
+       bb != ENTRY_BLOCK_PTR_FOR_FN (cfun)
+	 && cnt < param_max_niter_dominators_walk;
        bb = get_immediate_dominator (CDI_DOMINATORS, bb))
     {
       if (!single_pred_p (bb))
@@ -3170,7 +3273,7 @@ number_of_iterations_exit_assumptions (class loop *loop, edge exit,
   op1 = gimple_cond_rhs (stmt);
   type = TREE_TYPE (op0);
 
-  if (TREE_CODE (type) != INTEGER_TYPE
+  if (!INTEGRAL_NB_TYPE_P (type)
       && !POINTER_TYPE_P (type))
     return false;
 
@@ -4699,7 +4802,7 @@ maybe_lower_iteration_bound (class loop *loop)
 
      TODO: Due to the way record_estimate choose estimates to store, the bounds
      will be always nb_iterations_upper_bound-1.  We can change this to record
-     also statements not dominating the loop latch and update the walk bellow
+     also statements not dominating the loop latch and update the walk below
      to the shortest path algorithm.  */
   for (elt = loop->bounds; elt; elt = elt->next)
     {
@@ -4757,7 +4860,14 @@ maybe_lower_iteration_bound (class loop *loop)
           FOR_EACH_EDGE (e, ei, bb->succs)
 	    {
 	      if (loop_exit_edge_p (loop, e)
-		  || e == loop_latch_edge (loop))
+		  || e == loop_latch_edge (loop)
+		  /* When exiting an inner loop, verify it is finite.  */
+		  || (!flow_bb_inside_loop_p (bb->loop_father, e->dest)
+		      && !finite_loop_p (bb->loop_father))
+		  /* When we enter an irreducible region and the entry
+		     does not contain a bounding stmt assume it might be
+		     infinite.  */
+		  || (bb->flags & BB_IRREDUCIBLE_LOOP))
 		{
 		  found_exit = true;
 		  break;

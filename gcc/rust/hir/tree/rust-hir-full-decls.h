@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -95,6 +95,8 @@ class FieldAccessExpr;
 struct ClosureParam;
 class ClosureExpr;
 class BlockExpr;
+class AnonConst;
+class ConstBlock;
 class ContinueExpr;
 class BreakExpr;
 class RangeExpr;
@@ -113,8 +115,6 @@ class WhileLoopExpr;
 class WhileLetLoopExpr;
 class IfExpr;
 class IfExprConseqElse;
-class IfLetExpr;
-class IfLetExprConseqElse;
 struct MatchArm;
 // class MatchCase;
 // class MatchCaseBlockExpr;
@@ -125,8 +125,10 @@ class AwaitExpr;
 class AsyncBlockExpr;
 class InlineAsmReg;
 class InlineAsmRegClass;
-struct InlineAsmRegOrRegClass;
+class InlineAsmOperand;
 class InlineAsm;
+class LlvmInlineAsm;
+class OffsetOf;
 
 // rust-stmt.h
 class EmptyStmt;
@@ -197,13 +199,15 @@ class StructPatternFieldIdentPat;
 class StructPatternFieldIdent;
 class StructPattern;
 class TupleStructItems;
-class TupleStructItemsNoRange;
-class TupleStructItemsRange;
+class TupleStructItemsNoRest;
+class TupleStructItemsHasRest;
 class TupleStructPattern;
 class TuplePatternItems;
-class TuplePatternItemsMultiple;
-class TuplePatternItemsRanged;
+class TuplePatternItemsNoRest;
+class TuplePatternItemsHasRest;
 class TuplePattern;
+class SlicePatternItemsNoRest;
+class SlicePatternItemsHasRest;
 class SlicePattern;
 class AltPattern;
 
@@ -212,7 +216,6 @@ class TraitBound;
 class ImplTraitType;
 class TraitObjectType;
 class ParenthesisedType;
-class ImplTraitTypeOneBound;
 class TupleType;
 class NeverType;
 class RawPointerType;

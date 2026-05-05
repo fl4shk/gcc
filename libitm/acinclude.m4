@@ -26,21 +26,6 @@ AC_DEFUN([LIBITM_CHECK_64BIT_SYNC_BUILTINS], [
 	        [Define to 1 if the target supports 64-bit __sync_*_compare_and_swap])
   fi])
 
-dnl Check whether the target supports hidden visibility.
-AC_DEFUN([LIBITM_CHECK_ATTRIBUTE_VISIBILITY], [
-  AC_CACHE_CHECK([whether the target supports hidden visibility],
-		 libitm_cv_have_attribute_visibility, [
-  save_CFLAGS="$CFLAGS"
-  CFLAGS="$CFLAGS -Werror"
-  AC_TRY_COMPILE([void __attribute__((visibility("hidden"))) foo(void) { }],
-		 [], libitm_cv_have_attribute_visibility=yes,
-		 libitm_cv_have_attribute_visibility=no)
-  CFLAGS="$save_CFLAGS"])
-  if test $libitm_cv_have_attribute_visibility = yes; then
-    AC_DEFINE(HAVE_ATTRIBUTE_VISIBILITY, 1,
-      [Define to 1 if the target supports __attribute__((visibility(...))).])
-  fi])
-
 dnl Check whether the target supports dllexport
 AC_DEFUN([LIBITM_CHECK_ATTRIBUTE_DLLEXPORT], [
   AC_CACHE_CHECK([whether the target supports dllexport],
@@ -211,6 +196,7 @@ dnl Sets:
 dnl  with_gnu_ld
 dnl  libitm_ld_is_gold (possibly)
 dnl  libitm_ld_is_mold (possibly)
+dnl  libitm_ld_is_wild (possibly)
 dnl  libitm_gnu_ld_version (possibly)
 dnl
 dnl The last will be a single integer, e.g., version 1.23.45.0.67.89 will
@@ -244,10 +230,13 @@ AC_DEFUN([LIBITM_CHECK_LINKER_FEATURES], [
   # does some of this, but throws away the result.
   libitm_ld_is_gold=no
   libitm_ld_is_mold=no
+  libitm_ld_is_wild=no
   if $LD --version 2>/dev/null | grep 'GNU gold'> /dev/null 2>&1; then
     libitm_ld_is_gold=yes
   elif $LD --version 2>/dev/null | grep 'mold' >/dev/null 2>&1; then
     libitm_ld_is_mold=yes
+  elif $LD --version 2>/dev/null | grep 'Wild' >/dev/null 2>&1; then
+    libitm_ld_is_wild=yes
   fi
   changequote(,)
   ldver=`$LD --version 2>/dev/null |
@@ -404,6 +393,8 @@ if test $enable_symvers != no && test $libitm_shared_libgcc = yes; then
     elif test $libitm_ld_is_gold = yes ; then
       enable_symvers=gnu
     elif test $libitm_ld_is_mold = yes ; then
+      enable_symvers=gnu
+    elif test $libitm_ld_is_wild = yes ; then
       enable_symvers=gnu
     else
       # The right tools, the right setup, but too old.  Fallbacks?

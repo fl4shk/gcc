@@ -247,23 +247,17 @@ version (StdUnittest)
  *   $(LI it has a 'bool isUniformRandom' field readable in CTFE)
  * )
  */
-template isUniformRNG(Rng, ElementType)
-{
-    enum bool isUniformRNG = .isUniformRNG!Rng &&
-        is(std.range.primitives.ElementType!Rng == ElementType);
-}
+enum isUniformRNG(Rng, ElementType) = .isUniformRNG!Rng &&
+	is(std.range.primitives.ElementType!Rng == ElementType);
 
 /**
  * ditto
  */
-template isUniformRNG(Rng)
-{
-    enum bool isUniformRNG = isInputRange!Rng &&
-        is(typeof(
-        {
-            static assert(Rng.isUniformRandom); //tag
-        }));
-}
+enum isUniformRNG(Rng) = isInputRange!Rng &&
+	is(typeof(
+	{
+        static assert(Rng.isUniformRandom); //tag
+    }));
 
 ///
 @safe unittest
@@ -311,29 +305,23 @@ template isUniformRNG(Rng)
  *   $(LI it has a 'seed(ElementType)' function)
  * )
  */
-template isSeedable(Rng, SeedType)
-{
-    enum bool isSeedable = isUniformRNG!(Rng) &&
-        is(typeof(
-        {
-            Rng r = void;              // can define a Rng object
-            SeedType s = void;
-            r.seed(s); // can seed a Rng
-        }));
-}
+enum isSeedable(Rng, SeedType) = isUniformRNG!(Rng) &&
+	is(typeof(
+    {
+        Rng r = void;              ///< can define a Rng object
+        SeedType s = void; ///< Dummy doc to silence D-scanner.
+        r.seed(s); // can seed a Rng
+    }));
 
 ///ditto
-template isSeedable(Rng)
-{
-    enum bool isSeedable = isUniformRNG!Rng &&
-        is(typeof(
-        {
-            Rng r = void;                     // can define a Rng object
-            alias SeedType = typeof(r.front);
-            SeedType s = void;
-            r.seed(s); // can seed a Rng
-        }));
-}
+enum isSeedable(Rng) = isUniformRNG!Rng &&
+	is(typeof(
+    {
+        Rng r = void;                     ///< can define a Rng object
+        alias SeedType = typeof(r.front);
+        SeedType s = void; ///< Dummy doc to silence D-scanner.
+        r.seed(s); // can seed a Rng
+    }));
 
 ///
 @safe unittest
@@ -1772,10 +1760,39 @@ else
     }
 }
 
+version (linux)
+    version = SeedUseGetEntropy;
+version (Windows)
+    version = SeedUseGetEntropy;
+
 /**
 A "good" seed for initializing random number engines. Initializing
 with $(D_PARAM unpredictableSeed) makes engines generate different
 random number sequences every run.
+
+This function utilizes the system $(I cryptographically-secure pseudo-random
+number generator (CSPRNG)) or $(I pseudo-random number generator (PRNG))
+where available and implemented (currently `arc4random` on applicable BSD
+systems, `getrandom` on Linux or `BCryptGenRandom` on Windows) to generate
+“high quality” pseudo-random numbers – if possible.
+As a consequence, calling it may block under certain circumstances (typically
+during early boot when the system's entropy pool has not yet been
+initialized).
+
+On x86 CPU models which support the `RDRAND` instruction, that will be used
+when no more specialized randomness source is implemented.
+
+In the future, further platform-specific PRNGs may be incorporated.
+
+Warning:
+$(B This function must not be used for cryptographic purposes.)
+Despite being implemented for certain targets, there are no guarantees
+that it sources its randomness from a CSPRNG.
+The implementation also includes a fallback option that provides very little
+randomness and is used when no better source of randomness is available or
+integrated on the target system.
+As written earlier, this function only aims to provide randomness for seeding
+ordinary (non-cryptographic) PRNG engines.
 
 Returns:
 A single unsigned integer seed value, different on each successive call
@@ -1788,7 +1805,16 @@ how excellent the source of entropy is.
 */
 @property uint unpredictableSeed() @trusted nothrow @nogc
 {
-    version (AnyARC4Random)
+    version (SeedUseGetEntropy)
+    {
+        import std.internal.entropy : crashOnError, EntropySource, getEntropy;
+
+        uint buffer;
+        const status = (() @trusted => getEntropy(&buffer, buffer.sizeof, EntropySource.tryAll))();
+        crashOnError(status);
+        return buffer;
+    }
+    else version (AnyARC4Random)
     {
         return arc4random();
     }
@@ -1837,7 +1863,16 @@ if (isUnsigned!UIntType)
         /// ditto
         @property UIntType unpredictableSeed() @nogc nothrow @trusted
         {
-            version (AnyARC4Random)
+            version (SeedUseGetEntropy)
+            {
+                import std.internal.entropy : crashOnError, EntropySource, getEntropy;
+
+                UIntType buffer;
+                const status = (() @trusted => getEntropy(&buffer, buffer.sizeof, EntropySource.tryAll))();
+                crashOnError(status);
+                return buffer;
+            }
+            else version (AnyARC4Random)
             {
                 static if (UIntType.sizeof <= uint.sizeof)
                 {

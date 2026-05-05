@@ -1,5 +1,5 @@
 /* Common hooks for AArch64.
-   Copyright (C) 2012-2025 Free Software Foundation, Inc.
+   Copyright (C) 2012-2026 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GCC.
@@ -53,8 +53,10 @@ static const struct default_options aarch_option_optimization_table[] =
     { OPT_LEVELS_ALL, OPT_fomit_frame_pointer, NULL, 0 },
     /* Enable -fsched-pressure by default when optimizing.  */
     { OPT_LEVELS_1_PLUS, OPT_fsched_pressure, NULL, 1 },
-    /* Disable early scheduling due to high compile-time overheads.  */
+    /* Except for -O3 and higher, disable early scheduling due to high
+       compile-time overheads.  */
     { OPT_LEVELS_ALL, OPT_fschedule_insns, NULL, 0 },
+    { OPT_LEVELS_3_PLUS, OPT_fschedule_insns, NULL, 1 },
     /* Enable redundant extension instructions removal at -O2 and higher.  */
     { OPT_LEVELS_2_PLUS, OPT_free, NULL, 1 },
     { OPT_LEVELS_2_PLUS, OPT_mearly_ra_, NULL, AARCH64_EARLY_RA_ALL },
@@ -140,6 +142,10 @@ aarch64_handle_option (struct gcc_options *opts,
       opts->x_aarch64_flag_outline_atomics = val;
       return true;
 
+    case OPT_mmax_vectorization:
+      opts->x_flag_aarch64_max_vectorization = val;
+      return true;
+
     default:
       return true;
     }
@@ -157,6 +163,12 @@ struct aarch64_extension_info
   aarch64_feature_flags flags_on;
   /* If this feature is turned off, these bits also need to be turned off.  */
   aarch64_feature_flags flags_off;
+  /* If this feature remains enabled, these bits must also remain enabled.  */
+  aarch64_feature_flags flags_required;
+  /* If this is not an alias extension, then this is zero.
+     Otherwise, this is the set of feature bits this alias is preferred
+     over.  */
+  aarch64_feature_flags flags_alias_preferred_over;
 };
 
 /* ISA extensions in AArch64.  */
@@ -164,9 +176,11 @@ static constexpr aarch64_extension_info all_extensions[] =
 {
 #define AARCH64_OPT_EXTENSION(NAME, IDENT, C, D, E, FEATURE_STRING) \
   {NAME, AARCH64_FL_##IDENT, feature_deps::IDENT ().explicit_on, \
-   feature_deps::get_flags_off (feature_deps::root_off_##IDENT)},
+   feature_deps::get_flags_off (feature_deps::root_off_##IDENT), \
+   feature_deps::IDENT ().enable, \
+   feature_deps::alias_prefer_over_flags_##IDENT},
 #include "config/aarch64/aarch64-option-extensions.def"
-  {NULL, 0, 0, 0}
+  {NULL, 0, 0, 0, 0, 0}
 };
 
 struct aarch64_arch_info
@@ -204,6 +218,18 @@ static constexpr aarch64_processor_info all_cores[] =
   {NULL, aarch64_no_cpu, aarch64_no_arch, 0}
 };
 
+/* Return the set of feature flags that are required to be enabled when the
+   features in FLAGS are enabled.  */
+
+aarch64_feature_flags
+aarch64_get_required_features (aarch64_feature_flags flags)
+{
+  const struct aarch64_extension_info *opt;
+  for (opt = all_extensions; opt->name != NULL; opt++)
+    if (flags & opt->flag_canonical)
+      flags |= opt->flags_required;
+  return flags;
+}
 
 /* Print a list of CANDIDATES for an argument, and try to suggest a specific
    close match.  */
@@ -613,10 +639,10 @@ aarch64_get_extension_string_for_isa_flags
 {
   std::string outstr = "";
 
-  /* The CRYPTO bit should only be used to support the +crypto alias
+  /* The alias bits should only be used to support the aliases
      during option processing, and should be cleared at all other times.
      Verify this property for the supplied flags bitmask.  */
-  gcc_assert (!(AARCH64_FL_CRYPTO & aarch64_isa_flags));
+  gcc_assert (!(feature_deps::alias_flags & aarch64_isa_flags));
   aarch64_feature_flags current_flags = default_arch_flags;
 
   /* As a special case, do not assume that the assembler will enable CRC
@@ -636,24 +662,30 @@ aarch64_get_extension_string_for_isa_flags
      But in order to make the output more readable, it seems better
      to add the strings in definition order.  */
   aarch64_feature_flags added = 0;
-  auto flags_crypto = AARCH64_FL_AES | AARCH64_FL_SHA2;
   for (unsigned int i = ARRAY_SIZE (all_extensions); i-- > 0; )
     {
       auto &opt = all_extensions[i];
 
-      /* As a special case, emit +crypto rather than +aes+sha2,
-	 in order to support assemblers that predate the separate
-	 per-feature crypto flags.  */
-      auto flags = opt.flag_canonical;
-      if (flags == AARCH64_FL_CRYPTO)
-	flags = flags_crypto;
-
-      if ((flags & isa_flags & (explicit_flags | ~current_flags)) == flags)
+      if (!opt.flags_alias_preferred_over
+	  && (opt.flag_canonical & isa_flags
+	      & (explicit_flags | ~current_flags)))
 	{
 	  current_flags |= opt.flags_on;
 	  added |= opt.flag_canonical;
 	}
     }
+
+  /* Replace any aliased extensions.  */
+  for (auto alias: all_extensions)
+    if (alias.flags_alias_preferred_over
+	&& (added & alias.flags_alias_preferred_over)
+	     == alias.flags_alias_preferred_over
+	&& (alias.flags_on | isa_flags) == isa_flags)
+      {
+	added &= ~alias.flags_on;
+	added |= alias.flag_canonical;
+      }
+
   for (auto &opt : all_extensions)
     if (added & opt.flag_canonical)
       {
@@ -666,30 +698,42 @@ aarch64_get_extension_string_for_isa_flags
      detection because one way or another we can't tell if it's available
      or not.  */
 
+  aarch64_feature_flags removed = 0;
   for (auto &opt : all_extensions)
+    if (!opt.flags_alias_preferred_over
+	&& (opt.flag_canonical & current_flags & ~isa_flags))
+      {
+	current_flags &= ~opt.flags_off;
+	removed |= opt.flag_canonical;
+      }
+
+  /* Replace any aliased extensions.  */
+  for (auto alias: all_extensions)
     {
-      auto flags = opt.flag_canonical;
-      /* As a special case, don't emit "+noaes" or "+nosha2" when we could emit
-	 "+nocrypto" instead, in order to support assemblers that predate the
-	 separate per-feature crypto flags.  Only allow "+nocrypto" when "sm4"
-	 is not already enabled (to avoid dependending on whether "+nocrypto"
-	 also disables "sm4").  */
-      if (flags & flags_crypto
-	  && (flags_crypto & current_flags & ~isa_flags) == flags_crypto
-	  && !(current_flags & AARCH64_FL_SM4))
-	  continue;
+      /* Only allow "+nocrypto" when "sm4" is not already enabled
+	 (to avoid dependending on whether "+nocrypto" also disables "sm4").  */
+      if (alias.flag_canonical == AARCH64_FL_CRYPTO
+	  && (current_flags & AARCH64_FL_SM4))
+	continue;
 
-      if (flags == AARCH64_FL_CRYPTO)
-	/* If either crypto flag needs removing here, then both do.  */
-	flags = flags_crypto;
-
-      if (flags & current_flags & ~isa_flags)
+      if (alias.flags_alias_preferred_over /* Check this is an alias.  */
+	  /* Check we turn off any of the extensions for which we would prefer
+	     to use the alias.  */
+	  && (removed & alias.flags_alias_preferred_over)
+	  /* Check this doesn't turn off more flags than we need.  */
+	  && (alias.flags_off & isa_flags) == 0)
 	{
-	  current_flags &= ~opt.flags_off;
-	  outstr += "+no";
-	  outstr += opt.name;
+	  removed &= ~alias.flags_off;
+	  removed |= alias.flag_canonical;
 	}
     }
+
+  for (auto &opt : all_extensions)
+    if (removed & opt.flag_canonical)
+      {
+	outstr += "+no";
+	outstr += opt.name;
+      }
 
   return outstr;
 }

@@ -1,5 +1,5 @@
 /* RTL-level loop invariant motion.
-   Copyright (C) 2004-2025 Free Software Foundation, Inc.
+   Copyright (C) 2004-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1121,6 +1121,11 @@ find_invariant_insn (rtx_insn *insn, bool always_reached, bool always_executed)
 
   /* We cannot make trapping insn executed, unless it was executed before.  */
   if (may_trap_or_fault_p (PATTERN (insn)) && !always_reached)
+    return;
+
+  /* inline-asm that is not always executed cannot be moved
+     as it might conditionally trap. */
+  if (!always_reached && asm_noperands (PATTERN (insn)) >= 0)
     return;
 
   depends_on = BITMAP_ALLOC (NULL);

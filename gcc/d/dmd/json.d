@@ -1,12 +1,12 @@
 /**
  * Code for generating .json descriptions of the module when passing the `-X` flag to dmd.
  *
- * Copyright:   Copyright (C) 1999-2024 by The D Language Foundation, All Rights Reserved
+ * Copyright:   Copyright (C) 1999-2026 by The D Language Foundation, All Rights Reserved
  * Authors:     $(LINK2 https://www.digitalmars.com, Walter Bright)
  * License:     $(LINK2 https://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/src/dmd/json.d, _json.d)
+ * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/compiler/src/dmd/json.d, _json.d)
  * Documentation:  https://dlang.org/phobos/dmd_json.html
- * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/src/dmd/json.d
+ * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/compiler/src/dmd/json.d
  */
 
 module dmd.json;
@@ -25,6 +25,7 @@ import dmd.dimport;
 import dmd.dmodule;
 import dmd.dsymbol;
 import dmd.dsymbolsem : include;
+import dmd.templatesem : computeOneMember;
 import dmd.dtemplate;
 import dmd.errors;
 import dmd.expression;
@@ -41,10 +42,13 @@ import dmd.root.string;
 import dmd.target;
 import dmd.visitor;
 
-version(Windows) {
+version(Windows)
+{
     extern (C) char* _getcwd(char* buffer, size_t maxlen);
     alias getcwd = _getcwd;
-} else {
+}
+else
+{
     import core.sys.posix.unistd : getcwd;
 }
 
@@ -330,7 +334,7 @@ public:
         }
     }
 
-    extern(D) void propertyStorageClass(const char[] name, StorageClass stc)
+    extern(D) void propertyStorageClass(const char[] name, STC stc)
     {
         stc &= STC.visibleStorageClasses;
         if (stc)
@@ -347,23 +351,22 @@ public:
         }
     }
 
-    extern(D) void property(const char[] linename, const char[] charname, const ref Loc loc)
+    extern(D) void property(const char[] linename, const char[] charname, Loc loc)
     {
         if (loc.isValid())
         {
-            if (auto filename = loc.filename.toDString)
+            SourceLoc sl = SourceLoc(loc);
+            if (sl.filename.length > 0 && sl.filename != this.filename)
             {
-                if (filename != this.filename)
-                {
-                    this.filename = filename;
-                    property("file", filename);
-                }
+                this.filename = sl.filename;
+                property("file", sl.filename);
             }
-            if (loc.linnum)
+
+            if (sl.linnum)
             {
-                property(linename, loc.linnum);
-                if (loc.charnum)
-                    property(charname, loc.charnum);
+                property(linename, sl.linnum);
+                if (sl.charnum)
+                    property(charname, sl.charnum);
             }
         }
     }
@@ -472,6 +475,7 @@ public:
     void jsonProperties(TemplateDeclaration td)
     {
         jsonProperties(cast(Dsymbol)td);
+        td.computeOneMember();
         if (td.onemember && td.onemember.isCtorDeclaration())
             property("name", "this"); // __ctor -> this
         else

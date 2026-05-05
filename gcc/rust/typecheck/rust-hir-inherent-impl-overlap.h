@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -33,7 +33,7 @@ public:
     OverlappingImplItemPass pass;
 
     // generate mappings
-    pass.mappings->iterate_impl_items (
+    pass.mappings.iterate_impl_items (
       [&] (HirId id, HIR::ImplItem *impl_item, HIR::ImplBlock *impl) -> bool {
 	// ignoring trait-impls might need thought later on
 	if (impl->has_trait_ref ())
@@ -54,7 +54,7 @@ public:
     //   impl-type -> [ (item, name), ... ]
     // }
 
-    HirId impl_type_id = impl->get_type ()->get_mappings ().get_hirid ();
+    HirId impl_type_id = impl->get_type ().get_mappings ().get_hirid ();
     TyTy::BaseType *impl_type = nullptr;
     bool ok = query_type (impl_type_id, &impl_type);
     if (!ok)
@@ -79,27 +79,29 @@ public:
 	    if (query == candidate)
 	      continue;
 
-	    if (query->can_eq (candidate, false))
+	    if (!types_compatable (TyTy::TyWithLocation (query),
+				   TyTy::TyWithLocation (candidate),
+				   UNKNOWN_LOCATION, false))
+	      continue;
+
+	    // we might be in the case that we have:
+	    //
+	    // *const T vs *const [T]
+	    //
+	    // so lets use an equality check when the
+	    // candidates are both generic to be sure we dont emit a false
+	    // positive
+
+	    bool a = query->is_concrete ();
+	    bool b = candidate->is_concrete ();
+	    bool both_generic = !a && !b;
+	    if (both_generic)
 	      {
-		// we might be in the case that we have:
-		//
-		// *const T vs *const [T]
-		//
-		// so lets use an equality check when the
-		// candidates are both generic to be sure we dont emit a false
-		// positive
-
-		bool a = query->is_concrete ();
-		bool b = candidate->is_concrete ();
-		bool both_generic = !a && !b;
-		if (both_generic)
-		  {
-		    if (!query->is_equal (*candidate))
-		      continue;
-		  }
-
-		possible_collision (it->second, iy->second);
+		if (!query->is_equal (*candidate))
+		  continue;
 	      }
+
+	    possible_collision (it->second, iy->second);
 	  }
       }
   }

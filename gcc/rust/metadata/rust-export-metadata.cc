@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -23,6 +23,7 @@
 #include "rust-ast-dump.h"
 #include "rust-abi.h"
 #include "rust-item.h"
+#include "rust-macro.h"
 #include "rust-object-export.h"
 
 #include "md5.h"
@@ -56,10 +57,8 @@ void
 ExportContext::emit_trait (const HIR::Trait &trait)
 {
   // lookup the AST node for this
-  AST::Item *item = nullptr;
-  bool ok
-    = mappings->lookup_ast_item (trait.get_mappings ().get_nodeid (), &item);
-  rust_assert (ok);
+  AST::Item *item
+    = mappings.lookup_ast_item (trait.get_mappings ().get_nodeid ()).value ();
 
   std::stringstream oss;
   AST::Dump dumper (oss);
@@ -72,9 +71,8 @@ void
 ExportContext::emit_function (const HIR::Function &fn)
 {
   // lookup the AST node for this
-  AST::Item *item = nullptr;
-  bool ok = mappings->lookup_ast_item (fn.get_mappings ().get_nodeid (), &item);
-  rust_assert (ok);
+  AST::Item *item
+    = mappings.lookup_ast_item (fn.get_mappings ().get_nodeid ()).value ();
 
   // is this a CFG macro or not
   if (item->is_marked_for_strip ())
@@ -94,8 +92,8 @@ ExportContext::emit_function (const HIR::Function &fn)
       AST::Function &function = static_cast<AST::Function &> (vis_item);
 
       std::vector<std::unique_ptr<AST::ExternalItem>> external_items;
-      external_items.push_back (std::unique_ptr<AST::ExternalItem> (
-	static_cast<AST::ExternalItem *> (&function)));
+      external_items.emplace_back (
+	static_cast<AST::ExternalItem *> (&function));
 
       AST::ExternBlock extern_block (get_string_from_abi (Rust::ABI::RUST),
 				     std::move (external_items),
@@ -114,16 +112,12 @@ ExportContext::emit_function (const HIR::Function &fn)
 }
 
 void
-ExportContext::emit_macro (NodeId macro)
+ExportContext::emit_macro (AST::MacroRulesDefinition &macro)
 {
   std::stringstream oss;
   AST::Dump dumper (oss);
 
-  AST::Item *item;
-  auto ok = mappings->lookup_ast_item (macro, &item);
-  rust_assert (ok);
-
-  dumper.go (*item);
+  dumper.go (macro);
 
   public_interface_buffer += oss.str ();
 }
@@ -166,7 +160,7 @@ private:
 };
 
 PublicInterface::PublicInterface (HIR::Crate &crate)
-  : crate (crate), mappings (*Analysis::Mappings::get ()), context ()
+  : crate (crate), mappings (Analysis::Mappings::get ()), context ()
 {}
 
 void
@@ -200,7 +194,7 @@ PublicInterface::gather_export_data ()
 	vis_item.accept_vis (visitor);
     }
 
-  for (const auto &macro : mappings.get_exported_macros ())
+  for (auto &macro : mappings.get_exported_macros ())
     context.emit_macro (macro);
 }
 
@@ -239,7 +233,7 @@ PublicInterface::write_to_path (const std::string &path) const
 {
   // validate path contains correct extension
   const std::string expected_file_name = expected_metadata_filename ();
-  const char *path_base_name = basename (path.c_str ());
+  const char *path_base_name = lbasename (path.c_str ());
   if (strcmp (path_base_name, expected_file_name.c_str ()) != 0)
     {
       rust_error_at (UNDEF_LOCATION,
@@ -268,8 +262,7 @@ PublicInterface::write_to_path (const std::string &path) const
   FILE *nfd = fopen (path.c_str (), "wb");
   if (nfd == NULL)
     {
-      rust_error_at (UNDEF_LOCATION,
-		     "failed to open file %qs for writing: %s",
+      rust_error_at (UNDEF_LOCATION, "failed to open file %qs for writing: %s",
 		     path.c_str (), xstrerror (errno));
       return;
     }
@@ -363,9 +356,9 @@ PublicInterface::is_crate_public (const HIR::VisItem &item)
 std::string
 PublicInterface::expected_metadata_filename ()
 {
-  auto mappings = Analysis::Mappings::get ();
+  auto &mappings = Analysis::Mappings::get ();
 
-  const std::string current_crate_name = mappings->get_current_crate_name ();
+  const std::string current_crate_name = mappings.get_current_crate_name ();
   return current_crate_name + extension_path;
 }
 

@@ -1,6 +1,6 @@
 
 /* Compiler implementation of the D programming language
- * Copyright (C) 1999-2024 by The D Language Foundation, All Rights Reserved
+ * Copyright (C) 1999-2026 by The D Language Foundation, All Rights Reserved
  * written by Walter Bright
  * https://www.digitalmars.com
  * Distributed under the Boost Software License, Version 1.0.
@@ -181,7 +181,7 @@ class ExpStatement : public Statement
 public:
     Expression *exp;
 
-    static ExpStatement *create(const Loc &loc, Expression *exp);
+    static ExpStatement *create(Loc loc, Expression *exp);
     ExpStatement *syntaxCopy() override;
 
     void accept(Visitor *v) override { v->visit(this); }
@@ -213,7 +213,7 @@ class CompoundStatement : public Statement
 public:
     Statements *statements;
 
-    static CompoundStatement *create(const Loc &loc, Statement *s1, Statement *s2);
+    static CompoundStatement *create(Loc loc, Statement *s1, Statement *s2);
     CompoundStatement *syntaxCopy() override;
     ReturnStatement *endsWithReturnStatement() override final;
     Statement *last() override final;
@@ -518,6 +518,7 @@ class ReturnStatement final : public Statement
 public:
     Expression *exp;
     size_t caseDim;
+    FuncDeclaration *fesFunc;   // nested function for foreach it is in
 
     ReturnStatement *syntaxCopy() override;
 
@@ -561,6 +562,7 @@ public:
 class WithStatement final : public Statement
 {
 public:
+    Parameter *prm;
     Expression *exp;
     Statement *_body;
     VarDeclaration *wthis;
@@ -613,7 +615,7 @@ public:
     Statement *tryBody;   // set to enclosing TryCatchStatement or TryFinallyStatement if in _body portion
     d_bool bodyFallsThru;   // true if _body falls through to finally
 
-    static TryFinallyStatement *create(const Loc &loc, Statement *body, Statement *finalbody);
+    static TryFinallyStatement *create(Loc loc, Statement *body, Statement *finalbody);
     TryFinallyStatement *syntaxCopy() override;
     bool hasBreak() const override;
     bool hasContinue() const override;
@@ -715,7 +717,15 @@ class AsmStatement : public Statement
 {
 public:
     Token *tokens;
-    d_bool caseSensitive;  // for register names
+private:
+    uint8_t bitFields;
+public:
+    bool caseSensitive() const; // for register names
+    bool caseSensitive(bool v);
+    bool isVolatile() const;    // importC asm volatile
+    bool isVolatile(bool v);
+    bool isInline() const;      // importC asm inline
+    bool isInline(bool v);
 
     AsmStatement *syntaxCopy() override;
     void accept(Visitor *v) override { v->visit(this); }
@@ -725,8 +735,8 @@ class InlineAsmStatement final : public AsmStatement
 {
 public:
     void *asmcode;
-    unsigned asmalign;          // alignment of this statement
-    unsigned regs;              // mask of registers modified (must match regm_t in back end)
+    unsigned long long regs;      // mask of registers modified (must match regm_t in back end)
+    unsigned asmalign;            // alignment of this statement
     d_bool refparam;              // true if function parameter is referenced
     d_bool naked;                 // true if function is to be naked
 

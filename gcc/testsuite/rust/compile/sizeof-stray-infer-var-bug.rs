@@ -1,3 +1,9 @@
+#![feature(no_core)]
+#![no_core]
+
+#![feature(intrinsics)]
+
+#![feature(lang_items)]
 #[lang = "sized"]
 pub trait Sized {}
 
@@ -12,6 +18,6 @@ mod ptr {
     pub unsafe fn swap_nonoverlapping<T>(x: *mut T, y: *mut T, count: usize) {
         let x = x as *mut T;
         let y = y as *mut T;
-        let len = mem::size_of::<T>() * count;
+        let len = crate::mem::size_of::<T>() * count;
     }
 }

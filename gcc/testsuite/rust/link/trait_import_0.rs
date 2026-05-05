@@ -1,5 +1,5 @@
-// { dg-xfail-if "https://github.com/Rust-GCC/gccrs/issues/2349" { *-*-* } }
-// { dg-excess-errors "" { xfail *-*-* } }
+#![feature(no_core)]
+#![no_core]
 
 extern crate trait_import_1;
 use trait_import_1::Add;

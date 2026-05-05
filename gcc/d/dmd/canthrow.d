@@ -3,30 +3,27 @@
  *
  * Specification: $(LINK2 https://dlang.org/spec/function.html#nothrow-functions, Nothrow Functions)
  *
- * Copyright:   Copyright (C) 1999-2024 by The D Language Foundation, All Rights Reserved
+ * Copyright:   Copyright (C) 1999-2026 by The D Language Foundation, All Rights Reserved
  * Authors:     $(LINK2 https://www.digitalmars.com, Walter Bright)
  * License:     $(LINK2 https://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/src/dmd/canthrow.d, _canthrow.d)
+ * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/compiler/src/dmd/canthrow.d, _canthrow.d)
  * Documentation:  https://dlang.org/phobos/dmd_canthrow.html
- * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/src/dmd/canthrow.d
+ * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/compiler/src/dmd/canthrow.d
  */
 
 module dmd.canthrow;
 
 import dmd.aggregate;
-import dmd.arraytypes;
-import dmd.attrib;
 import dmd.astenums;
 import dmd.blockexit : BE, checkThrow;
-import dmd.declaration;
 import dmd.dsymbol;
-import dmd.dsymbolsem : include;
+import dmd.dsymbolsem : include, toAlias;
 import dmd.errorsink;
 import dmd.expression;
-import dmd.expressionsem : errorSupplementalInferredAttr;
+import dmd.expressionsem;
+import dmd.typesem;
 import dmd.func;
 import dmd.globals;
-import dmd.init;
 import dmd.mtype;
 import dmd.tokens;
 import dmd.visitor;

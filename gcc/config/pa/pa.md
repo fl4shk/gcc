@@ -1,5 +1,5 @@
 ;;- Machine description for HP PA-RISC architecture for GCC compiler
-;;   Copyright (C) 1992-2025 Free Software Foundation, Inc.
+;;   Copyright (C) 1992-2026 Free Software Foundation, Inc.
 ;;   Contributed by the Center for Software Science at the University
 ;;   of Utah.
 
@@ -2346,6 +2346,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && REG_OK_FOR_BASE_P (operands[2])
+   && (TARGET_NO_SPACE_REGS || REG_POINTER (operands[2]))
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SI (plus:SI (mult:SI (match_dup 1) (const_int 4)) (match_dup 2)))
 	(match_dup 3))
@@ -2364,6 +2365,7 @@
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
    && REG_OK_FOR_BASE_P (operands[2])
+   && (TARGET_NO_SPACE_REGS || REG_POINTER (operands[2]))
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SI (plus:DI (mult:DI (match_dup 1) (const_int 4)) (match_dup 2)))
 	(match_dup 3))
@@ -2379,9 +2381,7 @@
         (match_operand:SI 3 "register_operand" ""))]
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_INDEX_P (operands[1])
-   && REG_OK_FOR_BASE_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SI (plus:SI (match_dup 1) (match_dup 2)))
 	(match_dup 3))
@@ -2396,9 +2396,7 @@
         (match_operand:SI 3 "register_operand" ""))]
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_BASE_P (operands[1])
-   && REG_OK_FOR_INDEX_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SI (plus:SI (match_dup 2) (match_dup 1)))
 	(match_dup 3))
@@ -2414,9 +2412,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_INDEX_P (operands[1])
-   && REG_OK_FOR_BASE_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SI (plus:DI (match_dup 1) (match_dup 2)))
 	(match_dup 3))
@@ -2432,9 +2428,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_BASE_P (operands[1])
-   && REG_OK_FOR_INDEX_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SI (plus:DI (match_dup 2) (match_dup 1)))
 	(match_dup 3))
@@ -3961,6 +3955,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && REG_OK_FOR_BASE_P (operands[2])
+   && (TARGET_NO_SPACE_REGS || REG_POINTER (operands[2]))
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:DF (plus:SI (mult:SI (match_dup 1) (const_int 8)) (match_dup 2)))
 	(match_dup 3))
@@ -3978,6 +3973,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && REG_OK_FOR_BASE_P (operands[2])
+   && (TARGET_NO_SPACE_REGS || REG_POINTER (operands[2]))
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:DF (plus:SI (mult:SI (match_dup 1) (const_int 8)) (match_dup 2)))
 	(match_dup 3))
@@ -3996,6 +3992,7 @@
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
    && REG_OK_FOR_BASE_P (operands[2])
+   && (TARGET_NO_SPACE_REGS || REG_POINTER (operands[2]))
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:DF (plus:DI (mult:DI (match_dup 1) (const_int 8)) (match_dup 2)))
 	(match_dup 3))
@@ -4014,6 +4011,7 @@
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
    && REG_OK_FOR_BASE_P (operands[2])
+   && (TARGET_NO_SPACE_REGS || REG_POINTER (operands[2]))
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:DF (plus:DI (mult:DI (match_dup 1) (const_int 8)) (match_dup 2)))
 	(match_dup 3))
@@ -4029,9 +4027,7 @@
         (match_operand:DF 3 "register_operand" ""))]
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_INDEX_P (operands[1])
-   && REG_OK_FOR_BASE_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:DF (plus:SI (match_dup 1) (match_dup 2)))
 	(match_dup 3))
@@ -4046,9 +4042,7 @@
         (match_operand:DF 3 "register_operand" ""))]
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_BASE_P (operands[1])
-   && REG_OK_FOR_INDEX_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:DF (plus:SI (match_dup 2) (match_dup 1)))
 	(match_dup 3))
@@ -4064,9 +4058,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_INDEX_P (operands[1])
-   && REG_OK_FOR_BASE_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:DF (plus:DI (match_dup 1) (match_dup 2)))
 	(match_dup 3))
@@ -4082,9 +4074,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_BASE_P (operands[1])
-   && REG_OK_FOR_INDEX_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:DF (plus:DI (match_dup 2) (match_dup 1)))
 	(match_dup 3))
@@ -4355,6 +4345,7 @@
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
    && REG_OK_FOR_BASE_P (operands[2])
+   && (TARGET_NO_SPACE_REGS || REG_POINTER (operands[2]))
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:DI (plus:DI (mult:DI (match_dup 1) (const_int 8)) (match_dup 2)))
 	(match_dup 3))
@@ -4371,9 +4362,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_INDEX_P (operands[1])
-   && REG_OK_FOR_BASE_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:DI (plus:DI (match_dup 1) (match_dup 2)))
 	(match_dup 3))
@@ -4389,9 +4378,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_BASE_P (operands[1])
-   && REG_OK_FOR_INDEX_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:DI (plus:DI (match_dup 2) (match_dup 1)))
 	(match_dup 3))
@@ -4625,6 +4612,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && REG_OK_FOR_BASE_P (operands[2])
+   && (TARGET_NO_SPACE_REGS || REG_POINTER (operands[2]))
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SF (plus:SI (mult:SI (match_dup 1) (const_int 4)) (match_dup 2)))
 	(match_dup 3))
@@ -4643,6 +4631,7 @@
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
    && REG_OK_FOR_BASE_P (operands[2])
+   && (TARGET_NO_SPACE_REGS || REG_POINTER (operands[2]))
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SF (plus:DI (mult:DI (match_dup 1) (const_int 4)) (match_dup 2)))
 	(match_dup 3))
@@ -4658,9 +4647,7 @@
         (match_operand:SF 3 "register_operand" ""))]
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_INDEX_P (operands[1])
-   && REG_OK_FOR_BASE_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SF (plus:SI (match_dup 1) (match_dup 2)))
 	(match_dup 3))
@@ -4675,9 +4662,7 @@
         (match_operand:SF 3 "register_operand" ""))]
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_BASE_P (operands[1])
-   && REG_OK_FOR_INDEX_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SF (plus:SI (match_dup 2) (match_dup 1)))
 	(match_dup 3))
@@ -4693,9 +4678,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_INDEX_P (operands[1])
-   && REG_OK_FOR_BASE_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SF (plus:DI (match_dup 1) (match_dup 2)))
 	(match_dup 3))
@@ -4711,9 +4694,7 @@
   "!TARGET_SOFT_FLOAT
    && !TARGET_DISABLE_INDEXING
    && TARGET_64BIT
-   && TARGET_NO_SPACE_REGS
-   && REG_OK_FOR_BASE_P (operands[1])
-   && REG_OK_FOR_INDEX_P (operands[2])
+   && REGS_OK_FOR_BASE_INDEX (operands[1], operands[2])
    && FP_REGNO_P (REGNO (operands[3]))"
   [(set (mem:SF (plus:DI (match_dup 2) (match_dup 1)))
 	(match_dup 3))
@@ -5632,8 +5613,10 @@
    (set_attr "length" "4")])
 
 (define_insn ""
-  [(set (reg:SI 29) (mult:SI (reg:SI 26) (reg:SI 25)))
-   (clobber (match_operand:SI 0 "register_operand" "=a"))
+  [(set (reg:SI 29)
+	(mult:SI (match_operand:SI 1 "r26_operand" "")
+		 (match_operand:SI 0 "r25_operand" "")))
+   (clobber (match_operand:SI 2 "register_operand" "=a"))
    (clobber (reg:SI 26))
    (clobber (reg:SI 25))
    (clobber (reg:SI 31))]
@@ -5645,8 +5628,10 @@
 	      (symbol_ref "pa_attr_length_millicode_call (insn)")))])
 
 (define_insn ""
-  [(set (reg:SI 29) (mult:SI (reg:SI 26) (reg:SI 25)))
-   (clobber (match_operand:SI 0 "register_operand" "=a"))
+  [(set (reg:SI 29)
+	(mult:SI (match_operand:SI 1 "r26_operand" "")
+		 (match_operand:SI 0 "r25_operand" "")))
+   (clobber (match_operand:SI 2 "register_operand" "=a"))
    (clobber (reg:SI 26))
    (clobber (reg:SI 25))
    (clobber (reg:SI 2))]
@@ -5753,8 +5738,9 @@
 
 (define_insn ""
   [(set (reg:SI 29)
-	(div:SI (reg:SI 26) (match_operand:SI 0 "div_operand" "")))
-   (clobber (match_operand:SI 1 "register_operand" "=a"))
+	(div:SI (match_operand:SI 1 "r26_operand" "")
+		(match_operand:SI 0 "div_operand" "")))
+   (clobber (match_operand:SI 2 "register_operand" "=a"))
    (clobber (reg:SI 26))
    (clobber (reg:SI 25))
    (clobber (reg:SI 31))]
@@ -5768,8 +5754,9 @@
 
 (define_insn ""
   [(set (reg:SI 29)
-	(div:SI (reg:SI 26) (match_operand:SI 0 "div_operand" "")))
-   (clobber (match_operand:SI 1 "register_operand" "=a"))
+	(div:SI (match_operand:SI 1 "r26_operand" "")
+		(match_operand:SI 0 "div_operand" "")))
+   (clobber (match_operand:SI 2 "register_operand" "=a"))
    (clobber (reg:SI 26))
    (clobber (reg:SI 25))
    (clobber (reg:SI 2))]
@@ -5800,8 +5787,9 @@
 
 (define_insn ""
   [(set (reg:SI 29)
-	(udiv:SI (reg:SI 26) (match_operand:SI 0 "div_operand" "")))
-   (clobber (match_operand:SI 1 "register_operand" "=a"))
+	(udiv:SI (match_operand:SI 1 "r26_operand" "")
+		 (match_operand:SI 0 "div_operand" "")))
+   (clobber (match_operand:SI 2 "register_operand" "=a"))
    (clobber (reg:SI 26))
    (clobber (reg:SI 25))
    (clobber (reg:SI 31))]
@@ -5815,8 +5803,9 @@
 
 (define_insn ""
   [(set (reg:SI 29)
-	(udiv:SI (reg:SI 26) (match_operand:SI 0 "div_operand" "")))
-   (clobber (match_operand:SI 1 "register_operand" "=a"))
+	(udiv:SI (match_operand:SI 1 "r26_operand" "")
+		 (match_operand:SI 0 "div_operand" "")))
+   (clobber (match_operand:SI 2 "register_operand" "=a"))
    (clobber (reg:SI 26))
    (clobber (reg:SI 25))
    (clobber (reg:SI 2))]
@@ -5844,8 +5833,10 @@
 }")
 
 (define_insn ""
-  [(set (reg:SI 29) (mod:SI (reg:SI 26) (reg:SI 25)))
-   (clobber (match_operand:SI 0 "register_operand" "=a"))
+  [(set (reg:SI 29)
+	(mod:SI (match_operand:SI 1 "r26_operand" "")
+		(match_operand:SI 0 "r25_operand" "")))
+   (clobber (match_operand:SI 2 "register_operand" "=a"))
    (clobber (reg:SI 26))
    (clobber (reg:SI 25))
    (clobber (reg:SI 31))]
@@ -5858,8 +5849,10 @@
 	      (symbol_ref "pa_attr_length_millicode_call (insn)")))])
 
 (define_insn ""
-  [(set (reg:SI 29) (mod:SI (reg:SI 26) (reg:SI 25)))
-   (clobber (match_operand:SI 0 "register_operand" "=a"))
+  [(set (reg:SI 29)
+	(mod:SI (match_operand:SI 1 "r26_operand" "")
+		(match_operand:SI 0 "r25_operand" "")))
+   (clobber (match_operand:SI 2 "register_operand" "=a"))
    (clobber (reg:SI 26))
    (clobber (reg:SI 25))
    (clobber (reg:SI 2))]
@@ -5887,8 +5880,10 @@
 }")
 
 (define_insn ""
-  [(set (reg:SI 29) (umod:SI (reg:SI 26) (reg:SI 25)))
-   (clobber (match_operand:SI 0 "register_operand" "=a"))
+  [(set (reg:SI 29)
+	(umod:SI (match_operand:SI 1 "r26_operand" "")
+		 (match_operand:SI 0 "r25_operand" "")))
+   (clobber (match_operand:SI 2 "register_operand" "=a"))
    (clobber (reg:SI 26))
    (clobber (reg:SI 25))
    (clobber (reg:SI 31))]
@@ -5901,8 +5896,10 @@
 	      (symbol_ref "pa_attr_length_millicode_call (insn)")))])
 
 (define_insn ""
-  [(set (reg:SI 29) (umod:SI (reg:SI 26) (reg:SI 25)))
-   (clobber (match_operand:SI 0 "register_operand" "=a"))
+  [(set (reg:SI 29)
+	(umod:SI (match_operand:SI 1 "r26_operand" "")
+		 (match_operand:SI 0 "r25_operand" "")))
+   (clobber (match_operand:SI 2 "register_operand" "=a"))
    (clobber (reg:SI 26))
    (clobber (reg:SI 25))
    (clobber (reg:SI 2))]

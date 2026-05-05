@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -22,9 +22,18 @@
 namespace Rust {
 namespace Compile {
 
+Context *
+Context::get ()
+{
+  static Context *instance;
+  if (instance == nullptr)
+    instance = new Context ();
+
+  return instance;
+}
+
 Context::Context ()
-  : resolver (Resolver::Resolver::get ()),
-    tyctx (Resolver::TypeCheckContext::get ()),
+  : tyctx (Resolver::TypeCheckContext::get ()),
     mappings (Analysis::Mappings::get ()), mangler (Mangler ())
 {
   setup_builtins ();
@@ -33,19 +42,8 @@ Context::Context ()
 void
 Context::setup_builtins ()
 {
-  auto builtins = resolver->get_builtin_types ();
-  for (auto it = builtins.begin (); it != builtins.end (); it++)
-    {
-      HirId ref;
-      bool ok = tyctx->lookup_type_by_node_id ((*it)->get_node_id (), &ref);
-      rust_assert (ok);
-
-      TyTy::BaseType *lookup;
-      ok = tyctx->lookup_type (ref, &lookup);
-      rust_assert (ok);
-
-      TyTyResolveCompile::compile (this, lookup);
-    }
+  for (auto &builtin : tyctx->get_builtins ())
+    TyTyResolveCompile::compile (this, builtin.get ());
 }
 
 hashval_t
@@ -81,7 +79,8 @@ Context::type_hasher (tree type)
       hstate.add_object (TYPE_HASH (TYPE_OFFSET_BASETYPE (type)));
       break;
 
-      case ARRAY_TYPE: {
+    case ARRAY_TYPE:
+      {
 	if (TYPE_DOMAIN (type))
 	  hstate.add_object (TYPE_HASH (TYPE_DOMAIN (type)));
 	if (!AGGREGATE_TYPE_P (TREE_TYPE (type)))
@@ -92,7 +91,8 @@ Context::type_hasher (tree type)
       }
       break;
 
-      case INTEGER_TYPE: {
+    case INTEGER_TYPE:
+      {
 	tree t = TYPE_MAX_VALUE (type);
 	if (!t)
 	  t = TYPE_MIN_VALUE (type);
@@ -102,7 +102,8 @@ Context::type_hasher (tree type)
       }
 
     case REAL_TYPE:
-      case FIXED_POINT_TYPE: {
+    case FIXED_POINT_TYPE:
+      {
 	unsigned prec = TYPE_PRECISION (type);
 	hstate.add_object (prec);
 	break;
@@ -114,7 +115,8 @@ Context::type_hasher (tree type)
 
     case RECORD_TYPE:
     case UNION_TYPE:
-      case QUAL_UNION_TYPE: {
+    case QUAL_UNION_TYPE:
+      {
 	for (tree t = TYPE_FIELDS (type); t; t = TREE_CHAIN (t))
 	  {
 	    hashval_t name_hash = IDENTIFIER_HASH_VALUE (DECL_NAME (t));
@@ -129,7 +131,8 @@ Context::type_hasher (tree type)
       break;
 
     case REFERENCE_TYPE:
-      case POINTER_TYPE: {
+    case POINTER_TYPE:
+      {
 	hashval_t type_hash = type_hasher (TREE_TYPE (type));
 	hstate.add_object (type_hash);
       }

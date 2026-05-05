@@ -1,4 +1,4 @@
-@c Copyright (C) 1988-2025 Free Software Foundation, Inc.
+@c Copyright (C) 1988-2026 Free Software Foundation, Inc.
 @c This is part of the GCC manual.
 @c For copying conditions, see the file gcc.texi.
 
@@ -269,6 +269,10 @@ maintaining @code{complex<>}, sanity checking and disbursement, configuration
 architecture, libio maintenance, and early math work.
 
 @item
+Robert J. Dubner for his work on the COBOL front end, mating the
+parser output to the GENERIC tree.
+
+@item
 Fran@,{c}ois Dumont for his work on libstdc++-v3, especially maintaining and
 improving @code{debug-mode} and associative and unordered containers.
 
@@ -312,6 +316,9 @@ Christian Ehrhardt for dealing with bug reports.
 @item
 Ben Elliston for his work to move the Objective-C runtime into its
 own subdirectory and for his work on autoconf.
+
+@item
+Oleg Endo for continued development and maintenance of the SuperH back-end.
 
 @item
 Revital Eres for work on the PowerPC 750CL port.
@@ -530,6 +537,9 @@ Mark Klein for PA improvements.
 Thomas Koenig for various bug fixes.
 
 @item
+Kazumoto Kojima for continued development and maintenance of the SuperH back-end.
+
+@item
 Bruce Korb for the new and improved fixincludes code.
 
 @item
@@ -603,6 +613,10 @@ many other diagnostics fixes and improvements.
 @item
 Dave Love for his ongoing work with the Fortran front end and
 runtime libraries.
+
+@item
+James K. Lowden for his work on the COBOL front end, mainly the parser
+and CDF.
 
 @item
 Martin von L@"owis for internal consistency checking infrastructure,

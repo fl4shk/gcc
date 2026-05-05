@@ -1,5 +1,5 @@
 /* Functions to support general ended bitmaps.
-   Copyright (C) 1997-2025 Free Software Foundation, Inc.
+   Copyright (C) 1997-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -969,8 +969,8 @@ bitmap_set_bit (bitmap head, int bit)
   if (ptr != 0)
     {
       bool res = (ptr->bits[word_num] & bit_val) == 0;
-      if (res)
-	ptr->bits[word_num] |= bit_val;
+      /* Write back unconditionally to avoid branch mispredicts.  */
+      ptr->bits[word_num] |= bit_val;
       return res;
     }
 

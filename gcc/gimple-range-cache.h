@@ -1,5 +1,5 @@
 /* Header file for gimple ranger SSA cache.
-   Copyright (C) 2017-2025 Free Software Foundation, Inc.
+   Copyright (C) 2017-2026 Free Software Foundation, Inc.
    Contributed by Andrew MacLeod <amacleod@redhat.com>.
 
 This file is part of GCC.
@@ -111,6 +111,8 @@ public:
   bool get_global_range (vrange &r, tree name) const;
   bool get_global_range (vrange &r, tree name, bool &current_p);
   void set_global_range (tree name, const vrange &r, bool changed = true);
+  void mark_stale (tree name);
+  void update_consumers (tree name);
   range_query &const_query () { return m_globals; }
 
   void propagate_updated_value (tree name, basic_block bb);
@@ -142,6 +144,7 @@ private:
 
   vec<basic_block> m_workback;
   class update_list *m_update;
+  bitmap m_stale;
 };
 
 #endif // GCC_SSA_RANGE_CACHE_H

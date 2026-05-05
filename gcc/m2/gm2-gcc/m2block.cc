@@ -1,6 +1,6 @@
 /* m2block.cc provides an interface to maintaining block structures.
 
-Copyright (C) 2012-2025 Free Software Foundation, Inc.
+Copyright (C) 2012-2026 Free Software Foundation, Inc.
 Contributed by Gaius Mulley <gaius@glam.ac.uk>.
 
 This file is part of GNU Modula-2.
@@ -28,6 +28,7 @@ along with GNU Modula-2; see the file COPYING3.  If not see
 #include "m2options.h"
 #include "m2tree.h"
 #include "m2treelib.h"
+#include "m2pp.h"
 
 /* For each binding contour we allocate a binding_level structure
    which records the entities defined or declared in that contour.
@@ -113,6 +114,22 @@ typedef struct stmt_tree_s *stmt_tree_t;
 
 static location_t pending_location;
 static int pending_statement = false;
+
+/* GetTotalConstants returns the number of global constants.  */
+
+int
+m2block_GetTotalConstants (void)
+{
+  return m2treelib_nCount (global_binding_level->constants);
+}
+
+/* GetGlobalTypes returns the number of global types.  */
+
+int
+m2block_GetGlobalTypes (void)
+{
+  return m2treelib_nCount (global_binding_level->types);
+}
 
 /* assert_global_names asserts that the global_binding_level->names
    can be chained.  */
@@ -667,8 +684,7 @@ m2block_GetErrorNode (void)
   return error_mark_node;
 }
 
-/* GetGlobals - returns a list of global variables, functions,
-   constants.  */
+/* GetGlobals returns a list of global variables, functions and constants.  */
 
 tree
 m2block_GetGlobals (void)
@@ -685,7 +701,7 @@ m2block_GetGlobalContext (void)
   return global_binding_level->context;
 }
 
-/* do_add_stmt - t is a statement.  Add it to the statement-tree.  */
+/* do_add_stmt t is a statement.  Add it to the statement-tree.  */
 
 static tree
 do_add_stmt (tree t)
@@ -695,27 +711,14 @@ do_add_stmt (tree t)
   return t;
 }
 
-/* flush_pending_note - flushes a pending_statement note if
-   necessary.  */
+/* flush_pending_note flushes a pending_statement note if necessary.  */
 
 static void
 flush_pending_note (void)
 {
   if (pending_statement && (M2Options_GetM2g ()))
     {
-#if 0
-      /* --fixme-- we need a machine independant way to generate a nop.  */
-      tree instr = m2decl_BuildStringConstant ("nop", 3);
-      tree string
-          = resolve_asm_operand_names (instr, NULL_TREE, NULL_TREE, NULL_TREE);
-      tree note = build_stmt (pending_location, ASM_EXPR, string, NULL_TREE,
-                              NULL_TREE, NULL_TREE, NULL_TREE);
-
-      ASM_BASIC_P (note) = false;
-      ASM_VOLATILE_P (note) = false;
-#else
       tree note = build_empty_stmt (pending_location);
-#endif
       pending_statement = false;
       do_add_stmt (note);
     }

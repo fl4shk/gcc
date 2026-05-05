@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -22,10 +22,14 @@
 #include "rust-hir-type-check-implitem.h"
 #include "rust-hir-type-check-item.h"
 #include "rust-hir-type-check.h"
+#include "rust-hir-type-check-type.h"
 #include "rust-casts.h"
+#include "rust-mapping-common.h"
 #include "rust-unify.h"
 #include "rust-coercion.h"
 #include "rust-hir-type-bounds.h"
+#include "rust-immutable-name-resolution-context.h"
+#include "options.h"
 
 namespace Rust {
 namespace Resolver {
@@ -33,19 +37,19 @@ namespace Resolver {
 bool
 query_type (HirId reference, TyTy::BaseType **result)
 {
-  Analysis::Mappings *mappings = Analysis::Mappings::get ();
+  auto &mappings = Analysis::Mappings::get ();
   TypeCheckContext *context = TypeCheckContext::get ();
-
-  if (context->query_in_progress (reference))
-    return false;
 
   if (context->lookup_type (reference, result))
     return true;
 
+  if (context->query_in_progress (reference))
+    return false;
+
   context->insert_query (reference);
 
   std::pair<HIR::Enum *, HIR::EnumItem *> enum_candidiate
-    = mappings->lookup_hir_enumitem (reference);
+    = mappings.lookup_hir_enumitem (reference);
   bool enum_candidiate_ok
     = enum_candidiate.first != nullptr && enum_candidiate.second != nullptr;
   if (enum_candidiate_ok)
@@ -61,61 +65,84 @@ query_type (HirId reference, TyTy::BaseType **result)
       return true;
     }
 
-  HIR::Item *item = mappings->lookup_hir_item (reference);
-  if (item != nullptr)
+  if (auto item = mappings.lookup_hir_item (reference))
     {
-      rust_debug_loc (item->get_locus (), "resolved item {%u} to", reference);
-      *result = TypeCheckItem::Resolve (*item);
+      rust_debug_loc (item.value ()->get_locus (), "resolved item {%u} to",
+		      reference);
+      *result = TypeCheckItem::Resolve (*item.value ());
       context->query_completed (reference);
       return true;
     }
 
-  HirId parent_impl_id = UNKNOWN_HIRID;
-  HIR::ImplItem *impl_item
-    = mappings->lookup_hir_implitem (reference, &parent_impl_id);
-  if (impl_item != nullptr)
+  if (auto impl_item = mappings.lookup_hir_implitem (reference))
     {
-      HIR::ImplBlock *impl_block
-	= mappings->lookup_hir_impl_block (parent_impl_id);
-      rust_assert (impl_block != nullptr);
+      auto impl_block
+	= mappings.lookup_hir_impl_block (impl_item->second).value ();
 
       // found an impl item
-      rust_debug_loc (impl_item->get_locus (), "resolved impl-item {%u} to",
-		      reference);
+      rust_debug_loc (impl_item->first->get_locus (),
+		      "resolved impl-item {%u} to", reference);
 
-      *result = TypeCheckItem::ResolveImplItem (*impl_block, *impl_item);
+      *result = TypeCheckItem::ResolveImplItem (*impl_block, *impl_item->first);
       context->query_completed (reference);
       return true;
     }
 
   // is it an impl_type?
-  HIR::ImplBlock *impl_block_by_type = nullptr;
-  bool found_impl_block_type
-    = mappings->lookup_impl_block_type (reference, &impl_block_by_type);
-  if (found_impl_block_type)
+  if (auto impl_block_by_type = mappings.lookup_impl_block_type (reference))
     {
-      *result = TypeCheckItem::ResolveImplBlockSelf (*impl_block_by_type);
+      // found an impl item
+      HIR::ImplBlock *impl = impl_block_by_type.value ();
+      rust_debug_loc (impl->get_locus (), "resolved impl block type {%u} to",
+		      reference);
+
+      // this could be recursive to the root type
+      if (impl->has_type ())
+	{
+	  HIR::Type &ty = impl->get_type ();
+	  NodeId ref_node_id = UNKNOWN_NODEID;
+	  NodeId ast_node_id = ty.get_mappings ().get_nodeid ();
+
+	  auto &nr_ctx
+	    = Resolver2_0::ImmutableNameResolutionContext::get ().resolver ();
+
+	  // assign the ref_node_id if we've found something
+	  nr_ctx.lookup (ast_node_id).map ([&ref_node_id] (NodeId resolved) {
+	    ref_node_id = resolved;
+	  });
+
+	  if (ref_node_id != UNKNOWN_NODEID)
+	    {
+	      tl::optional<HirId> hid
+		= mappings.lookup_node_to_hir (ref_node_id);
+	      if (hid.has_value () && context->query_in_progress (hid.value ()))
+		{
+		  context->query_completed (reference);
+		  return false;
+		}
+	    }
+	}
+
+      *result = TypeCheckItem::ResolveImplBlockSelf (*impl);
       context->query_completed (reference);
       return true;
     }
 
   // is it an extern item?
-  HirId parent_extern_block_id = UNKNOWN_HIRID;
-  HIR::ExternalItem *extern_item
-    = mappings->lookup_hir_extern_item (reference, &parent_extern_block_id);
-  if (extern_item != nullptr)
+  if (auto extern_item = mappings.lookup_hir_extern_item (reference))
     {
-      HIR::ExternBlock *block
-	= mappings->lookup_hir_extern_block (parent_extern_block_id);
-      rust_assert (block != nullptr);
+      auto block = mappings.lookup_hir_extern_block (extern_item->second);
+      rust_assert (block.has_value ());
 
-      *result = TypeCheckTopLevelExternItem::Resolve (extern_item, *block);
+      *result
+	= TypeCheckTopLevelExternItem::Resolve (*extern_item.value ().first,
+						*block.value ());
       context->query_completed (reference);
       return true;
     }
 
   // more?
-  location_t possible_locus = mappings->lookup_location (reference);
+  location_t possible_locus = mappings.lookup_location (reference);
   rust_debug_loc (possible_locus, "query system failed to resolve: [%u]",
 		  reference);
   context->query_completed (reference);
@@ -125,11 +152,12 @@ query_type (HirId reference, TyTy::BaseType **result)
 
 bool
 types_compatable (TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
-		  location_t unify_locus, bool emit_errors)
+		  location_t unify_locus, bool emit_errors, bool check_bounds)
 {
   TyTy::BaseType *result
     = unify_site_and (UNKNOWN_HIRID, lhs, rhs, unify_locus, emit_errors,
-		      false /*commit*/, true /*infer*/, true /*cleanup*/);
+		      false /*commit*/, true /*infer*/, true /*cleanup*/,
+		      check_bounds);
   return result->get_kind () != TyTy::TypeKind::ERROR;
 }
 
@@ -146,31 +174,44 @@ unify_site (HirId id, TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
   std::vector<UnifyRules::CommitSite> commits;
   std::vector<UnifyRules::InferenceSite> infers;
   return UnifyRules::Resolve (lhs, rhs, unify_locus, true /*commit*/,
-			      true /*emit_error*/, false /*infer*/, commits,
-			      infers);
+			      true /*emit_error*/, false /*infer*/,
+			      true /*check_bounds*/, commits, infers);
 }
 
 TyTy::BaseType *
 unify_site_and (HirId id, TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
 		location_t unify_locus, bool emit_errors, bool commit_if_ok,
-		bool implicit_infer_vars, bool cleanup)
+		bool implicit_infer_vars, bool cleanup, bool check_bounds)
 {
   TypeCheckContext &context = *TypeCheckContext::get ();
 
   TyTy::BaseType *expected = lhs.get_ty ();
   TyTy::BaseType *expr = rhs.get_ty ();
 
-  rust_debug (
-    "unify_site_and commit %s infer %s id={%u} expected={%s} expr={%s}",
-    commit_if_ok ? "true" : "false", implicit_infer_vars ? "true" : "false", id,
-    expected->debug_str ().c_str (), expr->debug_str ().c_str ());
+  rust_debug_loc (unify_locus,
+		  "begin unify_site_and commit %s infer %s check_bounds %s "
+		  "id={%u} expected={%s} expr={%s}",
+		  commit_if_ok ? "true" : "false",
+		  implicit_infer_vars ? "true" : "false",
+		  check_bounds ? "true" : "false", id == UNKNOWN_HIRID ? 0 : id,
+		  expected->debug_str ().c_str (), expr->debug_str ().c_str ());
 
   std::vector<UnifyRules::CommitSite> commits;
   std::vector<UnifyRules::InferenceSite> infers;
   TyTy::BaseType *result
     = UnifyRules::Resolve (lhs, rhs, unify_locus, false /*commit inline*/,
-			   emit_errors, implicit_infer_vars, commits, infers);
+			   emit_errors, implicit_infer_vars, check_bounds,
+			   commits, infers);
   bool ok = result->get_kind () != TyTy::TypeKind::ERROR;
+
+  rust_debug_loc (unify_locus,
+		  "unify_site_and done ok=%s commit %s infer %s id={%u} "
+		  "expected={%s} expr={%s}",
+		  ok ? "true" : "false", commit_if_ok ? "true" : "false",
+		  implicit_infer_vars ? "true" : "false",
+		  id == UNKNOWN_HIRID ? 0 : id, expected->debug_str ().c_str (),
+		  expr->debug_str ().c_str ());
+
   if (ok && commit_if_ok)
     {
       for (auto &c : commits)
@@ -180,17 +221,18 @@ unify_site_and (HirId id, TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
     }
   else if (cleanup)
     {
-      // FIXME
-      // reset the get_next_hir_id
-
       for (auto &i : infers)
 	{
-	  i.param->set_ref (i.pref);
-	  i.param->set_ty_ref (i.ptyref);
+	  if (i.param != nullptr)
+	    {
+	      i.param->set_ref (i.pref);
+	      i.param->set_ty_ref (i.ptyref);
+	    }
 
 	  // remove the inference variable
 	  context.clear_type (i.infer);
-	  delete i.infer;
+	  // FIXME: Don't delete - result might point to this
+	  // delete i.infer;
 	}
     }
   return result;
@@ -225,8 +267,10 @@ coercion_site (HirId id, TyTy::TyWithLocation lhs, TyTy::TyWithLocation rhs,
   rust_debug ("coerce_default_unify(a={%s}, b={%s})",
 	      receiver->debug_str ().c_str (), expected->debug_str ().c_str ());
   TyTy::BaseType *coerced
-    = unify_site (id, lhs, TyTy::TyWithLocation (receiver, rhs.get_locus ()),
-		  locus);
+    = unify_site_and (id, lhs,
+		      TyTy::TyWithLocation (receiver, rhs.get_locus ()), locus,
+		      true /*emit_error*/, true /*commit*/, true /*infer*/,
+		      true /*cleanup*/);
   context->insert_autoderef_mappings (id, std::move (result.adjustments));
   return coerced;
 }
@@ -285,7 +329,7 @@ cast_site (HirId id, TyTy::TyWithLocation from, TyTy::TyWithLocation to,
 
 AssociatedImplTrait *
 lookup_associated_impl_block (const TyTy::TypeBoundPredicate &bound,
-			      const TyTy::BaseType *binding, bool *ambigious)
+			      TyTy::BaseType *binding, bool *ambigious)
 {
   auto context = TypeCheckContext::get ();
 

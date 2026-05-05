@@ -148,9 +148,65 @@ test_member_visit()
 #endif
 }
 
+template<typename T>
+void test_visited_as_handle()
+{
+  T v{};
+  auto store = std::make_format_args(v);
+  std::format_args args = store;
+
+  constexpr auto is_handle = [](auto arg) {
+    return std::is_same_v<decltype(arg), decltype(args.get(0))::handle>;
+  };
+  VERIFY( std::visit_format_arg(is_handle, args.get(0)) );
+#if __cpp_lib_format >= 202306L // C++26 adds std::basic_format_arg::visit
+  VERIFY( args.get(0).visit(is_handle) );
+#endif
+}
+
+template<typename T>
+concept can_format = std::is_default_constructible_v<std::formatter<T, char>>;
+
 int main()
 {
   test_empty();
   test_args();
   test_member_visit();
+
+#ifdef __SIZEOF_INT128__
+  test_visited_as_handle<__int128>();
+  test_visited_as_handle<unsigned __int128>();
+#endif
+#ifdef __BFLT16_DIG__
+  if constexpr (can_format<__gnu_cxx::__bfloat16_t>)
+    test_visited_as_handle<__gnu_cxx::__bfloat16_t>();
+#endif
+#ifdef __FLT16_DIG__
+  if constexpr (can_format<_Float16>)
+    test_visited_as_handle<_Float16>();
+#endif
+#ifdef __FLT32_DIG__
+  if constexpr (can_format<_Float32>)
+    test_visited_as_handle<_Float32>();
+#endif
+#ifdef __FLT64_DIG__
+  if constexpr (can_format<_Float64>)
+    test_visited_as_handle<_Float64>();
+#endif
+#ifdef __FLT128_DIG__
+  if constexpr (can_format<_Float128>)
+    test_visited_as_handle<_Float128>();
+#endif
+#ifdef __SIZEOF_FLOAT128__
+  //  __ieee128 is same type as __float128, and may be long double
+  if constexpr (!std::is_same_v<__float128, long double>)
+    if constexpr (can_format<__float128>)
+      test_visited_as_handle<__float128>();
+#endif
+#ifdef _GLIBCXX_LONG_DOUBLE_ALT128_COMPAT
+  if constexpr (!std::is_same_v<__ieee128, long double>)
+    test_visited_as_handle<__ieee128>();
+  if constexpr (!std::is_same_v<__ibm128, long double>)
+    test_visited_as_handle<__ibm128>();
+#endif
 }

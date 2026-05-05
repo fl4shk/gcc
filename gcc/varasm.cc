@@ -1,5 +1,5 @@
 /* Output variables, constants and external declarations, for GNU compiler.
-   Copyright (C) 1987-2025 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -871,7 +871,7 @@ mergeable_string_section (tree decl ATTRIBUTE_UNUSED,
   if (HAVE_GAS_SHF_MERGE && flag_merge_constants
       && TREE_CODE (decl) == STRING_CST
       && TREE_CODE (TREE_TYPE (decl)) == ARRAY_TYPE
-      && align <= 256
+      && align <= MAX_MERGEABLE_BITSIZE
       && (len = int_size_in_bytes (TREE_TYPE (decl))) > 0
       && TREE_STRING_LENGTH (decl) == len)
     {
@@ -885,7 +885,7 @@ mergeable_string_section (tree decl ATTRIBUTE_UNUSED,
 
       mode = SCALAR_INT_TYPE_MODE (TREE_TYPE (TREE_TYPE (decl)));
       modesize = GET_MODE_BITSIZE (mode);
-      if (modesize >= 8 && modesize <= 256
+      if (modesize >= 8 && modesize <= MAX_MERGEABLE_BITSIZE
 	  && (modesize & (modesize - 1)) == 0)
 	{
 	  if (align < modesize)
@@ -906,8 +906,8 @@ mergeable_string_section (tree decl ATTRIBUTE_UNUSED,
 	  if (i == len - unit || (unit == 1 && i == len))
 	    {
 	      sprintf (name, "%s.str%d.%d", prefix,
-		       modesize / 8, (int) (align / 8));
-	      flags |= (modesize / 8) | SECTION_MERGE | SECTION_STRINGS;
+		       modesize / BITS_PER_UNIT, (int) (align / BITS_PER_UNIT));
+	      flags |= (modesize / BITS_PER_UNIT) | SECTION_MERGE | SECTION_STRINGS;
 	      return get_section (name, flags, NULL);
 	    }
 	}
@@ -919,27 +919,59 @@ mergeable_string_section (tree decl ATTRIBUTE_UNUSED,
 /* Return the section to use for constant merging.  */
 
 section *
-mergeable_constant_section (machine_mode mode ATTRIBUTE_UNUSED,
-			    unsigned HOST_WIDE_INT align ATTRIBUTE_UNUSED,
-			    unsigned int flags ATTRIBUTE_UNUSED)
+mergeable_constant_section (unsigned HOST_WIDE_INT size_bits,
+			    unsigned HOST_WIDE_INT align,
+			    unsigned int flags)
 {
+  unsigned HOST_WIDE_INT newsize;
+  newsize = HOST_WIDE_INT_1U << ceil_log2 (size_bits);
   if (HAVE_GAS_SHF_MERGE && flag_merge_constants
-      && mode != VOIDmode
-      && mode != BLKmode
-      && known_le (GET_MODE_BITSIZE (mode), align)
+      && newsize <= MAX_MERGEABLE_BITSIZE
       && align >= 8
-      && align <= 256
+      && align <= newsize
       && (align & (align - 1)) == 0)
     {
       const char *prefix = function_mergeable_rodata_prefix ();
       char *name = (char *) alloca (strlen (prefix) + 30);
 
-      sprintf (name, "%s.cst%d", prefix, (int) (align / 8));
-      flags |= (align / 8) | SECTION_MERGE;
+      sprintf (name, "%s.cst%d", prefix, (int) (newsize / BITS_PER_UNIT));
+      flags |= (newsize / BITS_PER_UNIT) | SECTION_MERGE;
       return get_section (name, flags, NULL);
     }
   return readonly_data_section;
 }
+
+
+/* Return the section to use for constant merging. Like the above
+   but the size stored as a tree.  */
+static section *
+mergeable_constant_section (tree size_bits,
+			    unsigned HOST_WIDE_INT align,
+			    unsigned int flags)
+{
+  if (!size_bits || !tree_fits_uhwi_p (size_bits))
+    return readonly_data_section;
+  return mergeable_constant_section (tree_to_uhwi (size_bits), align, flags);
+}
+
+
+/* Return the section to use for constant merging. Like the above
+   but given a mode rather than the size.  */
+
+section *
+mergeable_constant_section (machine_mode mode,
+			    unsigned HOST_WIDE_INT align,
+			    unsigned int flags)
+{
+  /* If the mode is unknown (BLK or VOID), then return a non mergable section.  */
+  if (mode == BLKmode || mode == VOIDmode)
+    return readonly_data_section;
+  unsigned HOST_WIDE_INT size;
+  if (!GET_MODE_BITSIZE (mode).is_constant (&size))
+    return readonly_data_section;
+  return mergeable_constant_section (size, align, flags);
+}
+
 
 /* Given NAME, a putative register name, discard any customary prefixes.  */
 
@@ -1734,7 +1766,8 @@ assemble_asm (tree asm_str)
 	  constraints[i]
 	    = TREE_STRING_POINTER (TREE_VALUE (TREE_PURPOSE (tail)));
 	  if (!parse_output_constraint (&constraints[i], i, ninputs, noutputs,
-					&allows_mem, &allows_reg, &is_inout))
+					&allows_mem, &allows_reg, &is_inout,
+					nullptr))
 	    goto done;
 	  if (is_inout)
 	    {
@@ -1776,7 +1809,7 @@ assemble_asm (tree asm_str)
 	    = TREE_STRING_POINTER (TREE_VALUE (TREE_PURPOSE (tail)));
 	  if (!parse_input_constraint (&constraints[i + noutputs], i,
 				       ninputs, noutputs, 0, constraints,
-				       &allows_mem, &allows_reg))
+				       &allows_mem, &allows_reg, nullptr))
 	    goto done;
 	  if (strchr (constraints[i], '%'))
 	    {
@@ -2444,6 +2477,19 @@ assemble_variable_contents (tree decl, const char *name,
       else
 	/* Leave space for it.  */
 	assemble_zeros (tree_to_uhwi (DECL_SIZE_UNIT (decl)));
+      /* For mergeable section, make sure the section is zero filled up to
+	 the entity size of the section.  */
+      if (in_section
+	  && (in_section->common.flags & SECTION_MERGE)
+	  && tree_fits_uhwi_p (DECL_SIZE_UNIT (decl))
+	  && ((in_section->common.flags & SECTION_ENTSIZE)
+	      > tree_to_uhwi (DECL_SIZE_UNIT (decl))))
+	{
+	  unsigned HOST_WIDE_INT entsize, declsize;
+	  entsize = (in_section->common.flags & SECTION_ENTSIZE);
+	  declsize = tree_to_uhwi (DECL_SIZE_UNIT (decl));
+	  assemble_zeros (entsize - declsize);
+	}
       targetm.asm_out.decl_end ();
     }
 }
@@ -2907,7 +2953,7 @@ assemble_name_resolve (const char *name)
       ultimate_transparent_alias_target (&id);
       if (id != id_orig)
 	name = IDENTIFIER_POINTER (id);
-      gcc_assert (! TREE_CHAIN (id));
+      gcc_assert (!IDENTIFIER_TRANSPARENT_ALIAS (id));
     }
 
   return name;
@@ -4404,10 +4450,16 @@ output_constant_pool_1 (class constant_descriptor_rtx *desc,
 
   /* Make sure all constants in SECTION_MERGE and not SECTION_STRINGS
      sections have proper size.  */
-  if (align > GET_MODE_BITSIZE (desc->mode)
-      && in_section
-      && (in_section->common.flags & SECTION_MERGE))
-    assemble_align (align);
+  if (in_section
+      && (in_section->common.flags & SECTION_MERGE)
+      && ((in_section->common.flags & SECTION_ENTSIZE)
+	   > GET_MODE_SIZE (desc->mode)))
+    {
+      unsigned HOST_WIDE_INT entsize, constsize;
+      entsize = (in_section->common.flags & SECTION_ENTSIZE);
+      constsize = GET_MODE_SIZE (desc->mode);
+      assemble_zeros (entsize - constsize);
+    }
 
 #ifdef ASM_OUTPUT_SPECIAL_POOL_ENTRY
  done:
@@ -4465,7 +4517,7 @@ mark_constants_in_pattern (rtx insn)
 	      if (!TREE_ASM_WRITTEN (DECL_INITIAL (decl)))
 		{
 		  n_deferred_constants--;
-		  output_constant_def_contents (CONST_CAST_RTX (x));
+		  output_constant_def_contents (const_cast<rtx> (x));
 		}
 	    }
 	}
@@ -5827,10 +5879,13 @@ output_constructor_regular_field (oc_local_state *local)
 	     and the FE splits them into dynamic initialization.  */
 	  gcc_checking_assert (fieldsize >= fldsize);
 	  /* Given a non-empty initialization, this field had better
-	     be last.  Given a flexible array member, the next field
-	     on the chain is a TYPE_DECL of the enclosing struct.  */
+	     be last except in unions.  Given a flexible array member, the next
+	     field on the chain is a TYPE_DECL of the enclosing struct.  */
 	  const_tree next = DECL_CHAIN (local->field);
-	  gcc_assert (!fieldsize || !next || TREE_CODE (next) != FIELD_DECL);
+	  gcc_assert (!fieldsize
+		      || !next
+		      || TREE_CODE (next) != FIELD_DECL
+		      || TREE_CODE (local->type) == UNION_TYPE);
 	}
       else
 	fieldsize = tree_to_uhwi (DECL_SIZE_UNIT (local->field));
@@ -6522,7 +6577,12 @@ do_assemble_alias (tree decl, tree target)
 		  IDENTIFIER_POINTER (target));
 # endif
   /* If symbol aliases aren't actually supported...  */
-  if (!TARGET_SUPPORTS_ALIASES)
+  if (!TARGET_SUPPORTS_ALIASES
+# ifdef ACCEL_COMPILER
+      /* ..., and unless special-cased...  */
+      && !lookup_attribute ("symbol alias handled", DECL_ATTRIBUTES (decl))
+# endif
+      )
     /* ..., 'ASM_OUTPUT_DEF{,_FROM_DECLS}' better have raised an error.  */
     gcc_checking_assert (seen_error ());
 #elif defined (ASM_OUTPUT_WEAK_ALIAS) || defined (ASM_WEAKEN_DECL)
@@ -7314,7 +7374,7 @@ categorize_decl_for_section (const_tree decl, int reloc)
   else if (TREE_CODE (decl) == STRING_CST)
     {
       if ((flag_sanitize & SANITIZE_ADDRESS)
-	  && asan_protect_global (CONST_CAST_TREE (decl)))
+	  && asan_protect_global (const_cast<tree> (decl)))
       /* or !flag_merge_constants */
         return SECCAT_RODATA;
       else
@@ -7322,7 +7382,7 @@ categorize_decl_for_section (const_tree decl, int reloc)
     }
   else if (VAR_P (decl))
     {
-      tree d = CONST_CAST_TREE (decl);
+      tree d = const_cast<tree> (decl);
       if (bss_initializer_p (decl))
 	ret = SECCAT_BSS;
       else if (! TREE_READONLY (decl)
@@ -7444,7 +7504,7 @@ default_elf_select_section (tree decl, int reloc,
     case SECCAT_RODATA_MERGE_STR_INIT:
       return mergeable_string_section (DECL_INITIAL (decl), align, 0);
     case SECCAT_RODATA_MERGE_CONST:
-      return mergeable_constant_section (DECL_MODE (decl), align, 0);
+      return mergeable_constant_section (DECL_SIZE (decl), align, 0);
     case SECCAT_SRODATA:
       sname = ".sdata2";
       break;

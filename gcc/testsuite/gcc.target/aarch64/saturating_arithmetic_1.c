@@ -1,27 +1,27 @@
-/* { dg-do-compile } */
+/* { dg-do compile } */
 /* { dg-options "-O2 --save-temps -fno-schedule-insns2" } */
 /* { dg-final { check-function-bodies "**" "" "" } } */
 
 /*
 ** uadd:
-**	dup	v([0-9]+).8b, w1
-**	dup	v([0-9]+).8b, w0
+**	dup	v([0-9]+).8b, w[01]
+**	dup	v([0-9]+).8b, w[01]
 **	uqadd	b([0-9]+), (?:b\2, b\1|b\1, b\2)
 **	umov	w0, v\3.b\[0\]
 **	ret
 */
 /*
 ** uadd2:
-**	dup	v([0-9]+).8b, w1
-**	dup	v([0-9]+).8b, w0
+**	dup	v([0-9]+).8b, w[01]
+**	dup	v([0-9]+).8b, w[01]
 **	uqadd	b([0-9]+), (?:b\2, b\1|b\1, b\2)
 **	umov	w0, v\3.b\[0\]
 **	ret
 */
 /*
 ** usub: { xfail *-*-* }
-**	dup	v([0-9]+).8b, w1
-**	dup	v([0-9]+).8b, w0
+**	dup	v([0-9]+).8b, w[01]
+**	dup	v([0-9]+).8b, w[01]
 **	uqsub	b([0-9]+), b\1, b\2
 **	umov	w0, v\3.b\[0\]
 **	ret

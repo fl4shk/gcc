@@ -1,5 +1,5 @@
 /* gfortran backend interface
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
    Contributed by Paul Brook.
 
 This file is part of GCC.
@@ -148,6 +148,9 @@ gfc_get_sarif_source_language (const char *)
 #undef LANG_HOOKS_OMP_CLAUSE_LINEAR_CTOR
 #undef LANG_HOOKS_OMP_CLAUSE_DTOR
 #undef LANG_HOOKS_OMP_FINISH_CLAUSE
+#undef LANG_HOOKS_OMP_DEEP_MAPPING
+#undef LANG_HOOKS_OMP_DEEP_MAPPING_P
+#undef LANG_HOOKS_OMP_DEEP_MAPPING_CNT
 #undef LANG_HOOKS_OMP_ALLOCATABLE_P
 #undef LANG_HOOKS_OMP_SCALAR_TARGET_P
 #undef LANG_HOOKS_OMP_SCALAR_P
@@ -188,6 +191,9 @@ gfc_get_sarif_source_language (const char *)
 #define LANG_HOOKS_OMP_CLAUSE_LINEAR_CTOR	gfc_omp_clause_linear_ctor
 #define LANG_HOOKS_OMP_CLAUSE_DTOR		gfc_omp_clause_dtor
 #define LANG_HOOKS_OMP_FINISH_CLAUSE		gfc_omp_finish_clause
+#define LANG_HOOKS_OMP_DEEP_MAPPING		gfc_omp_deep_mapping
+#define LANG_HOOKS_OMP_DEEP_MAPPING_P		gfc_omp_deep_mapping_p
+#define LANG_HOOKS_OMP_DEEP_MAPPING_CNT		gfc_omp_deep_mapping_cnt
 #define LANG_HOOKS_OMP_ALLOCATABLE_P		gfc_omp_allocatable_p
 #define LANG_HOOKS_OMP_SCALAR_P			gfc_omp_scalar_p
 #define LANG_HOOKS_OMP_SCALAR_TARGET_P		gfc_omp_scalar_target_p
@@ -268,7 +274,7 @@ gfc_be_parse_file (void)
 static bool
 gfc_init (void)
 {
-  if (!gfc_cpp_enabled ())
+  if (!gfc_cpp_enabled () || gfc_option.flag_preprocessed)
     {
       linemap_add (line_table, LC_ENTER, false, gfc_source_file, 1);
       linemap_add (line_table, LC_RENAME, false, special_fname_builtin (), 0);
@@ -279,7 +285,7 @@ gfc_init (void)
   gfc_init_decl_processing ();
   gfc_static_ctors = NULL_TREE;
 
-  if (gfc_cpp_enabled ())
+  if (gfc_cpp_enabled () && !gfc_option.flag_preprocessed)
     gfc_cpp_init ();
 
   gfc_init_1 ();
@@ -558,7 +564,7 @@ gfc_builtin_function (tree decl)
   return decl;
 }
 
-/* So far we need just these 10 attribute types.  */
+/* So far we need just these 12 attribute types.  */
 #define ATTR_NULL			0
 #define ATTR_LEAF_LIST			(ECF_LEAF)
 #define ATTR_NOTHROW_LEAF_LIST		(ECF_NOTHROW | ECF_LEAF)
@@ -574,6 +580,8 @@ gfc_builtin_function (tree decl)
 #define ATTR_COLD_NORETURN_NOTHROW_LEAF_LIST \
 					(ECF_COLD | ECF_NORETURN | \
 					 ECF_NOTHROW | ECF_LEAF)
+#define ATTR_CALLBACK_GOMP_LIST (ECF_CB_1_2 | ATTR_NOTHROW_LIST)
+#define ATTR_PURE_NOTHROW_LIST (ECF_PURE | ECF_NOTHROW)
 
 static void
 gfc_define_builtin (const char *name, tree type, enum built_in_function code,

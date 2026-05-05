@@ -1,5 +1,5 @@
 /* Data structure definitions for a generic GCC target.
-   Copyright (C) 2001-2025 Free Software Foundation, Inc.
+   Copyright (C) 2001-2026 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify it
    under the terms of the GNU General Public License as published by the
@@ -68,13 +68,22 @@ union cumulative_args_t { void *p; };
 
 #endif /* !CHECKING_P */
 
+/* Values for bitint_info::extended below.  */
+
+enum bitint_ext { bitint_ext_undef, bitint_ext_partial, bitint_ext_full };
+
 /* Target properties of _BitInt(N) type.  _BitInt(N) is to be represented
    as series of abi_limb_mode CEIL (N, GET_MODE_PRECISION (abi_limb_mode))
    limbs, ordered from least significant to most significant if !big_endian,
    otherwise from most significant to least significant.  If extended is
-   false, the bits above or equal to N are undefined when stored in a register
-   or memory, otherwise they are zero or sign extended depending on if
-   it is unsigned _BitInt(N) or _BitInt(N) / signed _BitInt(N).
+   bitint_ext_undef, the bits above or equal to N are undefined when stored in
+   a register or memory, if extended is bitint_ext_full, they are zero or sign
+   extended depending on if it is unsigned _BitInt(N) or
+   _BitInt(N) / signed _BitInt(N), if extended is bitint_ext_partial, then bits
+   above or equal to N and below
+   M = CEIL (N, GET_MODE_PRECISION (limb_mode)) * GET_MODE_PRECISION (limb_mode)
+   are zero or sign extended as specified above and bits above or equal to M
+   are undefined.
    limb_mode is either the same as abi_limb_mode, or some narrower mode
    in which _BitInt lowering should actually perform operations in and
    what libgcc _BitInt helpers should use.
@@ -87,7 +96,7 @@ union cumulative_args_t { void *p; };
 struct bitint_info {
   machine_mode abi_limb_mode, limb_mode;
   bool big_endian;
-  bool extended;
+  enum bitint_ext extended;
 };
 
 /* Types of memory operation understood by the "by_pieces" infrastructure.
@@ -169,7 +178,6 @@ class predefined_function_abi;
 struct store_fwd_info;
 
 /* These are defined in tree-vect-stmts.cc.  */
-extern tree stmt_vectype (class _stmt_vec_info *);
 extern bool stmt_in_inner_loop_p (class vec_info *, class _stmt_vec_info *);
 
 /* Assembler instructions for creating various kinds of integer object.  */
@@ -274,7 +282,24 @@ enum type_context_kind {
   TCTX_EXCEPTIONS,
 
   /* Capturing objects of type T by value in a closure.  */
-  TCTX_CAPTURE_BY_COPY
+  TCTX_CAPTURE_BY_COPY,
+
+  /* Objects of type T appearing in OpenMP map clause.  */
+  TCTX_OMP_MAP,
+
+  /* Objects of type T appearing in OpenMP target region
+     without explicit map.  */
+  TCTX_OMP_MAP_IMP_REF,
+
+  /* Objects of type T appearing in OpenMP private clause.  */
+  TCTX_OMP_PRIVATE,
+
+  /* Objects of type T appearing in OpenMP firstprivate clause.  */
+  TCTX_OMP_FIRSTPRIVATE,
+
+  /* Objects of type T appearing in OpenMP device clauses.  */
+  TCTX_OMP_DEVICE_ADDR
+
 };
 
 enum poly_value_estimate_kind
@@ -282,6 +307,18 @@ enum poly_value_estimate_kind
   POLY_VALUE_MIN,
   POLY_VALUE_MAX,
   POLY_VALUE_LIKELY
+};
+
+enum class spill_cost_type
+{
+  SAVE,
+  RESTORE
+};
+
+enum class frame_cost_type
+{
+  ALLOCATION,
+  DEALLOCATION
 };
 
 typedef void (*emit_support_tinfos_callback) (tree);
@@ -329,6 +366,24 @@ mode_can_transfer_bits (machine_mode mode)
   if (targetm.mode_can_transfer_bits)
     return targetm.mode_can_transfer_bits (mode);
   return true;
+}
+
+/* Return true if OpenMP context types.  */
+
+inline bool
+omp_type_context (type_context_kind context)
+{
+  switch (context)
+    {
+    case TCTX_OMP_MAP:
+    case TCTX_OMP_MAP_IMP_REF:
+    case TCTX_OMP_PRIVATE:
+    case TCTX_OMP_FIRSTPRIVATE:
+    case TCTX_OMP_DEVICE_ADDR:
+      return true;
+    default:
+      return false;
+    }
 }
 
 #ifdef GCC_TM_H

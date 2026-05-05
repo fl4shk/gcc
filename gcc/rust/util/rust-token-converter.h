@@ -17,20 +17,17 @@
 #ifndef RUST_TOKEN_CONVERTER_H
 #define RUST_TOKEN_CONVERTER_H
 
-#include <vector>
+#include "rust-system.h"
 #include "rust-token.h"
 #include "libproc_macro_internal/proc_macro.h"
 
 namespace Rust {
 
-ProcMacro::TokenStream
-convert (const std::vector<const_TokenPtr> &tokens);
+ProcMacro::TokenStream convert (const std::vector<const_TokenPtr> &tokens);
 
-std::vector<const_TokenPtr>
-convert (const ProcMacro::TokenStream &ts);
+std::vector<const_TokenPtr> convert (const ProcMacro::TokenStream &ts);
 
-ProcMacro::Literal
-convert_literal (const_TokenPtr lit);
+ProcMacro::Literal convert_literal (const_TokenPtr lit);
 
 } // namespace Rust
 

@@ -3,12 +3,12 @@
  *
  * Specification: $(LINK2 https://dlang.org/spec/attribute.html#visibility_attributes, Visibility Attributes)
  *
- * Copyright:   Copyright (C) 1999-2024 by The D Language Foundation, All Rights Reserved
+ * Copyright:   Copyright (C) 1999-2026 by The D Language Foundation, All Rights Reserved
  * Authors:     $(LINK2 https://www.digitalmars.com, Walter Bright)
  * License:     $(LINK2 https://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
- * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/src/dmd/access.d, _access.d)
+ * Source:      $(LINK2 https://github.com/dlang/dmd/blob/master/compiler/src/dmd/access.d, _access.d)
  * Documentation:  https://dlang.org/phobos/dmd_access.html
- * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/src/dmd/access.d
+ * Coverage:    https://codecov.io/gh/dlang/dmd/src/master/compiler/src/dmd/access.d
  */
 
 module dmd.access;
@@ -20,6 +20,7 @@ import dmd.dmodule;
 import dmd.dscope;
 import dmd.dstruct;
 import dmd.dsymbol;
+import dmd.dsymbolsem : toAlias;
 import dmd.errors;
 import dmd.expression;
 import dmd.funcsem : overloadApply;
@@ -142,7 +143,7 @@ private bool hasPackageAccess(Module mod, Dsymbol s)
 /****************************************
  * Determine if scope sc has protected level access to cd.
  */
-private bool hasProtectedAccess(Scope *sc, Dsymbol s)
+private bool hasProtectedAccess(Scope* sc, Dsymbol s)
 {
     if (auto cd = s.isClassMember()) // also includes interfaces
     {
@@ -273,7 +274,7 @@ bool symbolIsVisible(Dsymbol origin, Dsymbol s)
  *  s = symbol to check for visibility
  * Returns: true if s is visible by origin
  */
-bool symbolIsVisible(Scope *sc, Dsymbol s)
+bool symbolIsVisible(Scope* sc, Dsymbol s)
 {
     s = mostVisibleOverload(s);
     return checkSymbolAccess(sc, s);
@@ -288,7 +289,7 @@ bool symbolIsVisible(Scope *sc, Dsymbol s)
  *  s = symbol to check for visibility
  * Returns: true if s is visible by origin
  */
-bool checkSymbolAccess(Scope *sc, Dsymbol s)
+bool checkSymbolAccess(Scope* sc, Dsymbol s)
 {
     final switch (s.visible().kind)
     {

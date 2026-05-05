@@ -1,5 +1,5 @@
 /* Loop distribution.
-   Copyright (C) 2006-2025 Free Software Foundation, Inc.
+   Copyright (C) 2006-2026 Free Software Foundation, Inc.
    Contributed by Georges-Andre Silber <Georges-Andre.Silber@ensmp.fr>
    and Sebastian Pop <sebastian.pop@amd.com>.
 
@@ -1353,6 +1353,7 @@ destroy_loop (class loop *loop)
   redirect_edge_pred (exit, src);
   exit->flags &= ~(EDGE_TRUE_VALUE|EDGE_FALSE_VALUE);
   exit->flags |= EDGE_FALLTHRU;
+  exit->probability = profile_probability::always ();
   cancel_loop_tree (loop);
   rescan_loop_exit (exit, false, true);
 
@@ -2178,25 +2179,32 @@ loop_distribution::pg_add_dependence_edges (struct graph *rdg, int dir,
 		 gcc.dg/tree-ssa/pr94969.c.  */
 	      if (DDR_NUM_DIST_VECTS (ddr) != 1)
 		this_dir = 2;
-	      /* If the overlap is exact preserve stmt order.  */
-	      else if (lambda_vector_zerop (DDR_DIST_VECT (ddr, 0),
-					    DDR_NB_LOOPS (ddr)))
-		;
-	      /* Else as the distance vector is lexicographic positive swap
-		 the dependence direction.  */
 	      else
 		{
-		  if (DDR_REVERSED_P (ddr))
-		    this_dir = -this_dir;
-		  this_dir = -this_dir;
-
+		  /* If the overlap is exact preserve stmt order.  */
+		  if (lambda_vector_zerop (DDR_DIST_VECT (ddr, 0),
+					   DDR_NB_LOOPS (ddr)))
+		    ;
+		  /* Else as the distance vector is lexicographic positive swap
+		     the dependence direction.  */
+		  else
+		    {
+		      if (DDR_REVERSED_P (ddr))
+			this_dir = -this_dir;
+		      this_dir = -this_dir;
+		    }
 		  /* When then dependence distance of the innermost common
-		     loop of the DRs is zero we have a conflict.  */
+		     loop of the DRs is zero we have a conflict.  This is
+		     due to wonky dependence analysis which sometimes
+		     ends up using a zero distance in place of unknown.  */
 		  auto l1 = gimple_bb (DR_STMT (dr1))->loop_father;
 		  auto l2 = gimple_bb (DR_STMT (dr2))->loop_father;
 		  int idx = index_in_loop_nest (find_common_loop (l1, l2)->num,
 						DDR_LOOP_NEST (ddr));
-		  if (DDR_DIST_VECT (ddr, 0)[idx] == 0)
+		  if (DDR_DIST_VECT (ddr, 0)[idx] == 0
+		      /* Unless it is the outermost loop which is the one
+			 we eventually distribute.  */
+		      && idx != 0)
 		    this_dir = 2;
 		}
 	    }
@@ -3959,7 +3967,8 @@ loop_distribution::execute (function *fun)
   if (changed)
     {
       /* Destroy loop bodies that could not be reused.  Do this late as we
-	 otherwise can end up refering to stale data in control dependences.  */
+	 otherwise can end up referring to stale data in control
+	 dependences.  */
       unsigned i;
       class loop *loop;
       FOR_EACH_VEC_ELT (loops_to_be_destroyed, i, loop)

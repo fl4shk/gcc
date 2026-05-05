@@ -1,4 +1,4 @@
-# Configure script for libada.
+# Configure script for gnattools
 #   Copyright 2003, 2004, 2009, 2012 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify it
@@ -45,7 +45,7 @@ AC_CANONICAL_BUILD
 AC_CANONICAL_HOST
 AC_CANONICAL_TARGET
 
-ACX_NONCANONICAL_HOST
+ACX_PROG_GNAT
 ACX_NONCANONICAL_TARGET
 
 # Need to pass this down for now :-P
@@ -97,6 +97,20 @@ if test "x$GCC" = "xyes"; then
 fi
 AC_SUBST(warn_cflags)
 
+# Enable --enable-host-pie
+AC_ARG_ENABLE(host-pie,
+[AS_HELP_STRING([--enable-host-pie],
+		[build host code as PIE])],
+[PICFLAG=-fPIE; LD_PICFLAG=-pie], [PICFLAG=-fno-PIE; LD_PICFLAG=-no-pie])
+AC_SUBST(PICFLAG)
+
+# Enable --enable-host-bind-now
+AC_ARG_ENABLE(host-bind-now,
+[AS_HELP_STRING([--enable-host-bind-now],
+       [link host code as BIND_NOW])],
+[LD_PICFLAG="$LD_PICFLAG -Wl,-z,now"], [])
+AC_SUBST(LD_PICFLAG)
+
 # Determine what to build for 'gnattools'.  Test after the above,
 # because testing for CC sets the final value of cross_compiling, even
 # if we end up using a different CC.  We want to build
@@ -111,6 +125,16 @@ AC_SUBST(warn_cflags)
 # ../gcc/ada/gcc-interface/config-lang.in as well.
 if test "x$cross_compiling/$build/$host" = "xno/$host/$target" ; then
   default_gnattools_target="gnattools-native"
+  # When natively-building x86_64-*abi32 tools without bootstrap,
+  # use the native toolchain to build gnattools, expecting its
+  # libraries to be compatible with whichever multilib was used to
+  # build other tools.  This requires the compiler being built to be
+  # gnatbind-compatible with the one used for the build.
+  case $enable_bootstrap/$target in
+    no/x86_64-*abi32)
+      default_gnattools_target="gnattools-cross"
+      ;;
+  esac
 else
   default_gnattools_target="gnattools-cross"
 fi

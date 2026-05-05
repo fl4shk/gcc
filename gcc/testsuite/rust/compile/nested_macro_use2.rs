@@ -1,3 +1,6 @@
+#![feature(no_core)]
+#![no_core]
+
 #[macro_use]
 mod foo {
     fn bar() {
@@ -8,5 +11,5 @@ mod foo {
 }
 
 fn main() {
-    baz!(); // { dg-error "unknown macro: .baz." }
+    baz!(); // { dg-error "could not resolve macro invocation .baz." }
 }

@@ -1,5 +1,5 @@
 # Make-lang.in -- Top level -*- makefile -*- fragment for the D frontend.
-# Copyright (C) 2006-2025 Free Software Foundation, Inc.
+# Copyright (C) 2006-2026 Free Software Foundation, Inc.
 
 # GCC is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -61,12 +61,12 @@ WARN_DFLAGS = -Wall -Wdeprecated
 NOEXCEPTION_DFLAGS = $(filter-out -fno-rtti, $(NOEXCEPTION_FLAGS))
 
 ALL_DFLAGS = $(DFLAGS-$@) $(GDCFLAGS) -fversion=IN_GCC $(CHECKING_DFLAGS) \
-	$(PICFLAG) $(ALIASING_FLAGS) $(NOEXCEPTION_DFLAGS) $(COVERAGE_FLAGS) \
+	$(PICFLAG) $(NOEXCEPTION_DFLAGS) $(COVERAGE_FLAGS) \
 	$(WARN_DFLAGS)
 
 DCOMPILE.base = $(GDC) -c $(ALL_DFLAGS) -o $@
-DCOMPILE = $(DCOMPILE.base) -MT $@ -MMD -MP -MF $(@D)/$(DEPDIR)/$(*F).TPo
-DPOSTCOMPILE = @mv $(@D)/$(DEPDIR)/$(*F).TPo $(@D)/$(DEPDIR)/$(*F).Po
+DCOMPILE = $(DCOMPILE.base) -MT $@ -MMD -MP -MF $(@D)/$(DEPDIR)/$(basename $(@F)).TPo
+DPOSTCOMPILE = @mv $(@D)/$(DEPDIR)/$(basename $(@F)).TPo $(@D)/$(DEPDIR)/$(basename $(@F)).Po
 DLINKER = $(GDC) $(NO_PIE_FLAG) -lstdc++
 
 # Like LINKER, but use a mutex for serializing front end links.
@@ -135,10 +135,9 @@ D_FRONTEND_OBJS = \
 	d/func.o \
 	d/funcsem.o \
 	d/globals.o \
-	d/gluelayer.o \
 	d/hdrgen.o \
-	d/iasm.o \
-	d/iasmgcc.o \
+	d/iasm-package.o \
+	d/iasm-gcc.o \
 	d/id.o \
 	d/identifier.o \
 	d/impcnvtab.o \
@@ -308,7 +307,7 @@ d.srcman: doc/gdc.1
 check-d: check-gdc
 lang_checks += check-gdc
 lang_checks_parallelized += check-gdc
-check_gdc_parallelize = 10
+check_gdc_parallelize = 128
 
 # No D-specific selftests.
 selftest-d:
@@ -417,6 +416,10 @@ d/%.o: d/dmd/%.d
 	$(DPOSTCOMPILE)
 
 d/common-%.o: d/dmd/common/%.d
+	$(DCOMPILE) $(D_INCLUDES) $<
+	$(DPOSTCOMPILE)
+
+d/iasm-%.o: d/dmd/iasm/%.d
 	$(DCOMPILE) $(D_INCLUDES) $<
 	$(DPOSTCOMPILE)
 

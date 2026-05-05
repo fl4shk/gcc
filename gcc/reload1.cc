@@ -1,5 +1,5 @@
 /* Reload pseudo regs into hard regs for insns that require hard regs.
-   Copyright (C) 1987-2025 Free Software Foundation, Inc.
+   Copyright (C) 1987-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -1272,8 +1272,10 @@ reload (rtx_insn *first, int global)
 
   inserted = fixup_abnormal_edges ();
 
-  /* We've possibly turned single trapping insn into multiple ones.  */
-  if (cfun->can_throw_non_call_exceptions)
+  /* Split basic blocks if we've possibly turned single trapping insn
+     into multiple ones or otherwise the backend requested to do so.  */
+  if (cfun->can_throw_non_call_exceptions
+      || cfun->split_basic_blocks_after_reload)
     {
       auto_sbitmap blocks (last_basic_block_for_fn (cfun));
       bitmap_ones (blocks);
@@ -7538,8 +7540,7 @@ emit_input_reload_insns (class insn_chain *chain, struct reload *rl,
     copy_reg_eh_region_note_forward (insn, get_insns (), NULL);
 
   /* End this sequence.  */
-  *where = get_insns ();
-  end_sequence ();
+  *where = end_sequence ();
 
   /* Update reload_override_in so that delete_address_reloads_1
      can see the actual register usage.  */

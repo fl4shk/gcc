@@ -1,5 +1,5 @@
 /* Polynomial integer classes.
-   Copyright (C) 2014-2025 Free Software Foundation, Inc.
+   Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -374,7 +374,7 @@ template<> struct poly_int_fullness<true> { using type = poly_int_full; };
 /* A class containing polynomial integers.  The polynomial has N coefficients
    of type C, and N - 1 indeterminates.  */
 template<unsigned int N, typename C>
-struct poly_int
+class poly_int
 {
 public:
   poly_int () = default;
@@ -1904,6 +1904,25 @@ known_alignment (const poly_int<N, Ca> &a)
   for (unsigned int i = 1; i < N; ++i)
     r |= a.coeffs[i];
   return r & -r;
+}
+
+/* Return true if we can compute A & B at compile time, storing the
+   result in RES if so.  */
+
+template<unsigned int N, typename Ca, typename Cb, typename Cr>
+inline typename if_nonpoly<Cb, bool>::type
+can_and_p (const poly_int<N, Ca> &a, Cb b, Cr *result)
+{
+  /* Coefficients 1 and above must be a multiple of something greater
+     than ~B.  */
+  typedef POLY_INT_TYPE (Ca) int_type;
+  if (N >= 2)
+    for (unsigned int i = 1; i < N; i++)
+      if ((-(a.coeffs[i] & -a.coeffs[i]) & ~b) != int_type (0))
+	return false;
+  *result = a;
+  result->coeffs[0] &= b;
+  return true;
 }
 
 /* Return true if we can compute A | B at compile time, storing the

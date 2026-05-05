@@ -1,5 +1,5 @@
 /* Support for avr-passes.def for AVR 8-bit microcontrollers.
-   Copyright (C) 2024-2025 Free Software Foundation, Inc.
+   Copyright (C) 2024-2026 Free Software Foundation, Inc.
 
    This file is part of GCC.
 
@@ -29,6 +29,7 @@
 #include "target.h"
 #include "rtl.h"
 #include "tree.h"
+#include "diagnostic-core.h"
 #include "cfghooks.h"
 #include "cfganal.h"
 #include "df.h"
@@ -2205,9 +2206,6 @@ memento_t::apply (const ply_t &p)
     }
   else if (p.size == 1)
     {
-      int x = values[p.regno];
-      int y = values[p.arg];
-
       switch (p.code)
 	{
 	default:
@@ -2234,29 +2232,42 @@ memento_t::apply (const ply_t &p)
 	    gcc_unreachable ();
 	  break;
 
-#define DO_ARITH(n_args, code, expr)					\
+#define DO_ARITH1(code, expr)						\
 	  case code:							\
 	    gcc_assert (knows (p.regno));				\
-	    if (n_args == 2)						\
-	      gcc_assert (knows (p.arg));				\
-	    set_value (p.regno, expr);					\
+	    {								\
+	      const int x = values[p.regno];				\
+	      set_value (p.regno, expr);				\
+	    }								\
 	    break
 
-	  DO_ARITH (1, NEG, -x);
-	  DO_ARITH (1, NOT, ~x);
-	  DO_ARITH (1, PRE_INC, x + 1);
-	  DO_ARITH (1, PRE_DEC, x - 1);
-	  DO_ARITH (1, ROTATE, (x << 4) | (x >> 4));
-	  DO_ARITH (1, ASHIFT, x << 1);
-	  DO_ARITH (1, LSHIFTRT, x >> 1);
-	  DO_ARITH (1, ASHIFTRT, (x >> 1) | (x & 0x80));
+#define DO_ARITH2(code, expr)						\
+	  case code:							\
+	    gcc_assert (knows (p.regno));				\
+	    gcc_assert (knows (p.arg));					\
+	    {								\
+	      const int x = values[p.regno];				\
+	      const int y = values[p.arg];				\
+	      set_value (p.regno, expr);				\
+	    }								\
+	    break
 
-	  DO_ARITH (2, AND, x & y);
-	  DO_ARITH (2, IOR, x | y);
-	  DO_ARITH (2, XOR, x ^ y);
-	  DO_ARITH (2, PLUS, x + y);
-	  DO_ARITH (2, MINUS, x - y);
-#undef DO_ARITH
+	  DO_ARITH1 (NEG, -x);
+	  DO_ARITH1 (NOT, ~x);
+	  DO_ARITH1 (PRE_INC, x + 1);
+	  DO_ARITH1 (PRE_DEC, x - 1);
+	  DO_ARITH1 (ROTATE, (x << 4) | (x >> 4));
+	  DO_ARITH1 (ASHIFT, x << 1);
+	  DO_ARITH1 (LSHIFTRT, x >> 1);
+	  DO_ARITH1 (ASHIFTRT, (x >> 1) | (x & 0x80));
+
+	  DO_ARITH2 (AND, x & y);
+	  DO_ARITH2 (IOR, x | y);
+	  DO_ARITH2 (XOR, x ^ y);
+	  DO_ARITH2 (PLUS, x + y);
+	  DO_ARITH2 (MINUS, x - y);
+#undef DO_ARITH1
+#undef DO_ARITH2
 	}
     } // size == 1
   else
@@ -3156,8 +3167,7 @@ bbinfo_t::optimize_one_block (bool &changed)
 		    || (bbinfo_t::try_split_any_p && od.try_split_any (this))
 		    || (bbinfo_t::try_mem0_p && od.try_mem0 (this)));
 
-      rtx_insn *new_insns = get_insns ();
-      end_sequence ();
+      rtx_insn *new_insns = end_sequence ();
 
       gcc_assert (found == (od.n_new_insns >= 0));
 
@@ -3932,10 +3942,7 @@ avr_parallel_insn_from_insns (rtx_insn *i[5])
 			 PATTERN (i[3]), PATTERN (i[4]));
   start_sequence ();
   emit (gen_rtx_PARALLEL (VOIDmode, vec));
-  rtx_insn *insn = get_insns ();
-  end_sequence ();
-
-  return insn;
+  return end_sequence ();
 }
 
 
@@ -4113,9 +4120,8 @@ avr_optimize_casesi (rtx_insn *insns[5], rtx *xop)
   JUMP_LABEL (cbranch) = xop[4];
   ++LABEL_NUSES (xop[4]);
 
-  rtx_insn *seq1 = get_insns ();
   rtx_insn *last1 = get_last_insn ();
-  end_sequence ();
+  rtx_insn *seq1 = end_sequence ();
 
   emit_insn_after (seq1, insns[2]);
 
@@ -4134,9 +4140,8 @@ avr_optimize_casesi (rtx_insn *insns[5], rtx *xop)
 
   emit_insn (pat_4);
 
-  rtx_insn *seq2 = get_insns ();
   rtx_insn *last2 = get_last_insn ();
-  end_sequence ();
+  rtx_insn *seq2 = end_sequence ();
 
   emit_insn_after (seq2, insns[3]);
 
@@ -4833,6 +4838,201 @@ avr_pass_fuse_add::execute1 (function *func)
 	    n_ldi + n_add + n_mem, n_ldi, n_add, n_mem);
 
   return 0;
+}
+
+
+
+//////////////////////////////////////////////////////////////////////////////
+// Fuse 2 move insns after combine.
+
+static const pass_data avr_pass_data_2moves =
+{
+  RTL_PASS,	    // type
+  "",		    // name (will be patched)
+  OPTGROUP_NONE,    // optinfo_flags
+  TV_DF_SCAN,	    // tv_id
+  0,		    // properties_required
+  0,		    // properties_provided
+  0,		    // properties_destroyed
+  0,		    // todo_flags_start
+  0		    // todo_flags_finish
+};
+
+class avr_pass_2moves : public rtl_opt_pass
+{
+public:
+  avr_pass_2moves (gcc::context *ctxt, const char *name)
+    : rtl_opt_pass (avr_pass_data_2moves, ctxt)
+  {
+    this->name = name;
+  }
+
+  unsigned int execute (function *func) final override
+  {
+    if (optimize && avropt_fuse_move2)
+      {
+	bool changed = false;
+	basic_block bb;
+
+	FOR_EACH_BB_FN (bb, func)
+	  {
+	    changed |= optimize_2moves_bb (bb);
+	  }
+
+	if (changed)
+	  {
+	    df_note_add_problem ();
+	    df_analyze ();
+	  }
+      }
+
+    return 0;
+  }
+
+  bool optimize_2moves (rtx_insn *, rtx_insn *);
+  bool optimize_2moves_bb (basic_block);
+}; // avr_pass_2moves
+
+bool
+avr_pass_2moves::optimize_2moves_bb (basic_block bb)
+{
+  bool changed = false;
+  rtx_insn *insn1 = nullptr;
+  rtx_insn *insn2 = nullptr;
+  rtx_insn *curr;
+
+  FOR_BB_INSNS (bb, curr)
+    {
+      if (insn1 && INSN_P (insn1)
+	  && insn2 && INSN_P (insn2))
+	changed |= optimize_2moves (insn1, insn2);
+
+      insn1 = insn2;
+      insn2 = curr;
+    }
+
+  return changed;
+}
+
+bool
+avr_pass_2moves::optimize_2moves (rtx_insn *insn1, rtx_insn *insn2)
+{
+  bool good = false;
+  bool bad = false;
+  rtx set1, dest1, src1;
+  rtx set2, dest2, src2;
+
+  if ((set1 = single_set (insn1))
+      && (set2 = single_set (insn2))
+      && (src1 = SET_SRC (set1))
+      && REG_P (src2 = SET_SRC (set2))
+      && REG_P (dest1 = SET_DEST (set1))
+      && REG_P (dest2 = SET_DEST (set2))
+      && rtx_equal_p (dest1, src2)
+      // Now we have:
+      // insn1: dest1 = src1
+      // insn2: dest2 = dest1
+      && REGNO (dest1) >= FIRST_PSEUDO_REGISTER
+      // Paranoia.
+      && GET_CODE (PATTERN (insn1)) != PARALLEL
+      && GET_CODE (PATTERN (insn2)) != PARALLEL
+      && (rtx_equal_p (dest2, src1)
+	  || !reg_overlap_mentioned_p (dest2, src1)))
+    {
+      avr_dump ("\n;; Found 2moves:\n%r\n%r\n", insn1, insn2);
+      avr_dump (";; reg %d: insn uses uids:", REGNO (dest1));
+
+      // Go check that dest1 is used exactly once, namely by insn2.
+
+      df_ref use = DF_REG_USE_CHAIN (REGNO (dest1));
+      for (; use; use = DF_REF_NEXT_REG (use))
+	{
+	  rtx_insn *user = DF_REF_INSN (use);
+	  avr_dump (" %d", INSN_UID (user));
+	  good |= INSN_UID (user) == INSN_UID (insn2);
+	  bad |= INSN_UID (user) != INSN_UID (insn2);
+	}
+      avr_dump (".\n");
+
+      if (good && !bad
+	  // Propagate src1 to insn2:
+	  // insn1: # Deleted
+	  // insn2: dest2 = src1
+	  && validate_change (insn2, &SET_SRC (set2), src1, false))
+	{
+	  SET_INSN_DELETED (insn1);
+	  return true;
+	}
+    }
+
+  if (good && !bad)
+    avr_dump (";; Failed\n");
+
+  return false;
+}
+
+
+
+//////////////////////////////////////////////////////////////////////////////
+// Split insns with nonzero_bits() after combine.
+
+static const pass_data avr_pass_data_split_nzb =
+{
+  RTL_PASS,	    // type
+  "",		    // name (will be patched)
+  OPTGROUP_NONE,    // optinfo_flags
+  TV_DF_SCAN,	    // tv_id
+  0,		    // properties_required
+  0,		    // properties_provided
+  0,		    // properties_destroyed
+  0,		    // todo_flags_start
+  0		    // todo_flags_finish
+};
+
+class avr_pass_split_nzb : public rtl_opt_pass
+{
+public:
+  avr_pass_split_nzb (gcc::context *ctxt, const char *name)
+    : rtl_opt_pass (avr_pass_data_split_nzb, ctxt)
+  {
+    this->name = name;
+  }
+
+  unsigned int execute (function *) final override
+  {
+    if (avropt_use_nonzero_bits)
+      split_nzb_insns ();
+    return 0;
+  }
+
+  void split_nzb_insns ();
+
+}; // avr_pass_split_nzb
+
+
+void
+avr_pass_split_nzb::split_nzb_insns ()
+{
+  rtx_insn *next;
+
+  for (rtx_insn *insn = get_insns (); insn; insn = next)
+    {
+      next = NEXT_INSN (insn);
+
+      if (INSN_P (insn)
+	  && single_set (insn)
+	  && get_attr_nzb (insn) == NZB_YES)
+	{
+	  rtx_insn *last = try_split (PATTERN (insn), insn, 1 /*last*/);
+
+	  // The nonzero_bits() insns *must* split.  If not: ICE.
+	  if (last == insn)
+	    {
+	      debug_rtx (insn);
+	      internal_error ("failed to split insn");
+	    }
+	}
+    }
 }
 
 
@@ -5633,6 +5833,20 @@ rtl_opt_pass *
 make_avr_pass_casesi (gcc::context *ctxt)
 {
   return new avr_pass_casesi (ctxt, "avr-casesi");
+}
+
+// Optimize 2 consecutive moves after combine.
+
+rtl_opt_pass *
+make_avr_pass_2moves (gcc::context *ctxt)
+{
+  return new avr_pass_2moves (ctxt, "avr-2moves");
+}
+
+rtl_opt_pass *
+make_avr_pass_split_nzb (gcc::context *ctxt)
+{
+  return new avr_pass_split_nzb (ctxt, "avr-split-nzb");
 }
 
 // Try to replace 2 cbranch insns with 1 comparison and 2 branches.

@@ -16,10 +16,20 @@ $(TR $(TH Function Name) $(TH Description)
         $(TD Joins a couple of functions into one that executes the original
         functions independently and returns a tuple with all the results.
     ))
+    $(TR $(TD $(LREF bind))
+        $(TD Passes the fields of a struct as arguments to a function.
+    ))
     $(TR $(TD $(LREF compose), $(LREF pipe))
         $(TD Join a couple of functions into one that executes the original
         functions one after the other, using one function's result for the next
         function's argument.
+    ))
+    $(TR $(TD $(LREF ctEval))
+        $(TD Enforces the evaluation of an expression during compile-time.
+    ))
+    $(TR $(TD $(LREF curry))
+        $(TD Converts a multi-argument function into a series of single-argument
+        functions. `f(x, y) == curry(f)(x)(y)`
     ))
     $(TR $(TD $(LREF lessThan), $(LREF greaterThan), $(LREF equalTo))
         $(TD Ready-made predicate functions to compare two values.
@@ -34,10 +44,6 @@ $(TR $(TH Function Name) $(TH Description)
         $(TD Creates a function that binds the first argument of a given function
         to a given value.
     ))
-    $(TR $(TD $(LREF curry))
-        $(TD Converts a multi-argument function into a series of single-argument
-        functions.  f(x, y) == curry(f)(x)(y)
-    ))
     $(TR $(TD $(LREF reverseArgs))
         $(TD Predicate that reverses the order of its arguments.
     ))
@@ -47,9 +53,6 @@ $(TR $(TH Function Name) $(TH Description)
     $(TR $(TD $(LREF unaryFun), $(LREF binaryFun))
         $(TD Create a unary or binary function from a string. Most often
         used when defining algorithms on ranges.
-    ))
-    $(TR $(TD $(LREF bind))
-        $(TD Passes the fields of a struct as arguments to a function.
     ))
 ))
 
@@ -908,7 +911,7 @@ template partial(alias fun, alias arg)
 
 /**
 Takes a function of (potentially) many arguments, and returns a function taking
-one argument and returns a callable taking the rest.  f(x, y) == curry(f)(x)(y)
+one argument and returns a callable taking the rest. `f(x, y) == curry(f)(x)(y)`
 
 Params:
     F = a function taking at least one argument
@@ -1805,7 +1808,6 @@ private struct DelegateFaker(F)
  *
  * BUGS:
  * $(UL
- *   $(LI Does not work with `@safe` functions.)
  *   $(LI Ignores C-style / D-style variadic arguments.)
  * )
  */
@@ -1886,16 +1888,21 @@ private template buildDelegate(F)
 
 @safe unittest
 {
-    static int inc(ref uint num) {
+    static int inc(ref int num) {
         num++;
         return 8675309;
     }
 
-    uint myNum = 0x1337;
-    struct S1 { int opCall() { inc(myNum); return myNum; } }
-    static assert(!is(typeof(&s1.opCall) == delegate));
+    struct S1
+    {
+        static int myNum = 0x1337;
+        static int opCall() { inc(myNum); return myNum; }
+    }
+
     S1 s1;
     auto getvals1 = toDelegate(s1);
+    static assert(!is(typeof(&s1.opCall)     == delegate));
+    static assert( is(typeof(toDelegate(s1)) == delegate));
     assert(getvals1() == 0x1338);
 }
 
@@ -1924,15 +1931,18 @@ private template buildDelegate(F)
     assert(getvali() == 3);
 
     struct S1 { int opCall() { inc(myNum); return myNum; } }
-    static assert(!is(typeof(&s1.opCall) == delegate));
     S1 s1;
     auto getvals1 = toDelegate(s1);
+    static assert(is(typeof(&s1.opCall) == delegate));
+    static assert(is(typeof(getvals1)   == delegate));
+    assert(&s1.opCall is getvals1);
     assert(getvals1() == 4);
 
     struct S2 { static int opCall() { return 123456; } }
-    static assert(!is(typeof(&S2.opCall) == delegate));
     S2 s2;
-    auto getvals2 =&S2.opCall;
+    auto getvals2 = toDelegate(s2);
+    static assert(!is(typeof(&S2.opCall) == delegate));
+    static assert( is(typeof(getvals2)   == delegate));
     assert(getvals2() == 123456);
 
     /* test for attributes */
@@ -2166,4 +2176,51 @@ template bind(alias fun)
     tuple(123).bind!((auto ref x) {
         static assert(!__traits(isRef, x));
     });
+}
+
+/**
+ * Enforces the evaluation of an expression during compile-time.
+ *
+ * Computes the value of an expression during compilation (CTFE).
+ *
+ * This is useful for call chains in functional programming
+ * where declaring an `enum` constant would require splitting
+ * the pipeline.
+ *
+ * Params:
+ *   expr = expression to evaluate
+ * See_also:
+ *   $(LINK https://dlang.org/spec/function.html#interpretation)
+ */
+enum ctEval(alias expr) = expr;
+
+///
+@safe unittest
+{
+    import std.math : abs;
+
+    // No explicit `enum` needed.
+    float result = ctEval!(abs(-3));
+    assert(result == 3);
+
+    // Can be statically asserted.
+    static assert(ctEval!(abs(-4)) == 4);
+    static assert(ctEval!(abs( 9)) == 9);
+}
+
+///
+@safe unittest
+{
+    import core.stdc.math : round;
+    import std.conv : to;
+    import std.math : abs, PI, sin;
+
+    // `round` from the C standard library cannot be interpreted at compile
+    // time, because it has no available source code. However the function
+    // calls preceding `round` can be evaluated during compile time.
+    int result = ctEval!(abs(sin(1.0)) * 180 / PI)
+        .round()
+        .to!int();
+
+    assert(result == 48);
 }

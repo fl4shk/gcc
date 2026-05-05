@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -24,6 +24,8 @@
 #include "rust-compile-type.h"
 #include "rust-diagnostics.h"
 #include "rust-hir-full-decls.h"
+#include "rust-attributes.h"
+#include "rust-attribute-values.h"
 
 namespace Rust {
 namespace Compile {
@@ -34,16 +36,10 @@ class CompileExternItem : public HIRCompileBase,
 public:
   static tree compile (HIR::ExternalItem *item, Context *ctx,
 		       TyTy::BaseType *concrete = nullptr,
-		       bool is_query_mode = false,
 		       location_t ref_locus = UNDEF_LOCATION)
   {
     CompileExternItem compiler (ctx, concrete, ref_locus);
     item->accept_vis (compiler);
-
-    if (is_query_mode && compiler.reference == error_mark_node)
-      rust_internal_error_at (ref_locus, "failed to compile extern item: %s",
-			      item->as_string ().c_str ());
-
     return compiler.reference;
   }
 
@@ -63,8 +59,7 @@ public:
     rust_assert (ok);
 
     std::string name = item.get_item_name ().as_string ();
-    // FIXME this is assuming C ABI
-    std::string asm_name = name;
+    GGC::Ident asm_name = get_link_name (item);
 
     tree type = TyTyResolveCompile::compile (ctx, resolved_type);
     bool is_external = true;
@@ -130,18 +125,7 @@ public:
 
     tree compiled_fn_type = TyTyResolveCompile::compile (ctx, fntype);
     std::string ir_symbol_name = function.get_item_name ().as_string ();
-    std::string asm_name = function.get_item_name ().as_string ();
-    if (fntype->get_abi () == ABI::RUST)
-      {
-	// then we need to get the canonical path of it and mangle it
-	const Resolver::CanonicalPath *canonical_path = nullptr;
-	bool ok = ctx->get_mappings ()->lookup_canonical_path (
-	  function.get_mappings ().get_nodeid (), &canonical_path);
-	rust_assert (ok);
-
-	ir_symbol_name = canonical_path->get () + fntype->subst_as_string ();
-	asm_name = ctx->mangle_item (fntype, *canonical_path);
-      }
+    GGC::Ident asm_name = get_link_name (function);
 
     const unsigned int flags = Backend::function_is_declaration;
     tree fndecl = Backend::function (compiled_fn_type, ir_symbol_name, asm_name,
@@ -165,6 +149,36 @@ private:
     : HIRCompileBase (ctx), concrete (concrete), reference (error_mark_node),
       ref_locus (ref_locus)
   {}
+
+  template <typename T> static GGC::Ident get_link_name (T &obj)
+  {
+    AST::Attribute *use_attr = nullptr;
+
+    for (auto &attr : obj.get_outer_attrs ())
+      {
+	if (attr.get_path ().as_string () == Values::Attributes::LINK_NAME)
+	  {
+	    // later attributes override earlier ones
+	    // TODO: add warning -- should duplicate
+	    //       attributes be folded elsewhere?
+	    use_attr = &attr;
+	  }
+      }
+
+    if (use_attr)
+      {
+	auto link_name
+	  = Analysis::Attributes::extract_string_literal (*use_attr);
+
+	if (!link_name.has_value ())
+	  rust_error_at (use_attr->get_locus (),
+			 "malformed %<link_name%> attribute input");
+	else
+	  return *link_name;
+      }
+
+    return obj.get_item_name ();
+  }
 
   TyTy::BaseType *concrete;
   tree reference;

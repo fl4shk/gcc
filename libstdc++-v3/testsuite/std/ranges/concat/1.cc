@@ -85,10 +85,39 @@ test03()
   VERIFY( ranges::equal(view2, std::vector{4, 5, 6, 1, 2, 3}) );
 }
 
+void
+test04()
+{
+  // PR libstdc++/115215 - views::concat rejects non-movable reference
+  int x[] = {1,2,3};
+  struct nomove {
+    nomove() = default;
+    nomove(const nomove&) = delete;
+  };
+  auto v = x | views::transform([](int) { return nomove{}; });
+  using type = decltype(views::concat(v));
+  using type = decltype(v);
+}
+
+void
+test05()
+{
+  // PR libstdc++/120934 - views::concat is ill-formed depending on argument order
+  auto v1 = views::single(1);
+  std::vector<int> vec = {2, 3};
+  auto v2 = views::join(views::transform(vec, views::single));
+
+  static_assert( ranges::range<decltype(views::concat(v1, v2))> );
+  static_assert( ranges::range<decltype(views::concat(v2, v1))> );
+}
+
 int
 main()
 {
   static_assert(test01());
+  test01();
   test02();
   test03();
+  test04();
+  test05();
 }

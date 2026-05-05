@@ -1,6 +1,6 @@
 // Core algorithmic facilities -*- C++ -*-
 
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -101,7 +101,7 @@ namespace ranges
 	     typename _Pred = ranges::equal_to,
 	     typename _Proj1 = identity, typename _Proj2 = identity>
       requires indirectly_comparable<_Iter1, _Iter2, _Pred, _Proj1, _Proj2>
-      constexpr bool
+      [[nodiscard]] constexpr bool
       operator()(_Iter1 __first1, _Sent1 __last1,
 		 _Iter2 __first2, _Sent2 __last2, _Pred __pred = {},
 		 _Proj1 __proj1 = {}, _Proj2 __proj2 = {}) const
@@ -168,7 +168,7 @@ namespace ranges
 	     typename _Proj1 = identity, typename _Proj2 = identity>
       requires indirectly_comparable<iterator_t<_Range1>, iterator_t<_Range2>,
 				     _Pred, _Proj1, _Proj2>
-      constexpr bool
+      [[nodiscard]] constexpr bool
       operator()(_Range1&& __r1, _Range2&& __r2, _Pred __pred = {},
 		 _Proj1 __proj1 = {}, _Proj2 __proj2 = {}) const
       {
@@ -187,6 +187,20 @@ namespace ranges
   };
 
   inline constexpr __equal_fn equal{};
+
+namespace __detail
+{
+  template<bool _IsMove, typename _OutIter, typename _InIter>
+    [[__gnu__::__always_inline__]]
+    constexpr void
+    __assign_one(_OutIter& __out, _InIter& __in)
+    {
+      if constexpr (_IsMove)
+	*__out = ranges::iter_move(__in);
+      else
+	*__out = *__in;
+    }
+} // namespace __detail
 
   template<typename _Iter, typename _Out>
     struct in_out_result
@@ -291,14 +305,14 @@ namespace ranges
 		    __builtin_memmove(__result, __first,
 				      sizeof(_ValueTypeI) * __num);
 		  else if (__num == 1)
-		    std::__assign_one<_IsMove>(__result, __first);
+		    __detail::__assign_one<_IsMove>(__result, __first);
 		  return {__first + __num, __result + __num};
 		}
 	    }
 
 	  for (auto __n = __last - __first; __n > 0; --__n)
 	    {
-	      std::__assign_one<_IsMove>(__result, __first);
+	      __detail::__assign_one<_IsMove>(__result, __first);
 	      ++__first;
 	      ++__result;
 	    }
@@ -308,7 +322,7 @@ namespace ranges
 	{
 	  while (__first != __last)
 	    {
-	      std::__assign_one<_IsMove>(__result, __first);
+	      __detail::__assign_one<_IsMove>(__result, __first);
 	      ++__first;
 	      ++__result;
 	    }
@@ -420,7 +434,7 @@ namespace ranges
 		    __builtin_memmove(__result, __first,
 				      sizeof(_ValueTypeI) * __num);
 		  else if (__num == 1)
-		    std::__assign_one<_IsMove>(__result, __first);
+		    __detail::__assign_one<_IsMove>(__result, __first);
 		  return {__first + __num, __result};
 		}
 	    }
@@ -432,7 +446,7 @@ namespace ranges
 	    {
 	      --__tail;
 	      --__result;
-	      std::__assign_one<_IsMove>(__result, __tail);
+	      __detail::__assign_one<_IsMove>(__result, __tail);
 	    }
 	  return {std::move(__lasti), std::move(__result)};
 	}
@@ -445,7 +459,7 @@ namespace ranges
 	    {
 	      --__tail;
 	      --__result;
-	      std::__assign_one<_IsMove>(__result, __tail);
+	      __detail::__assign_one<_IsMove>(__result, __tail);
 	    }
 	  return {std::move(__lasti), std::move(__result)};
 	}

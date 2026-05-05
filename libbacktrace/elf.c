@@ -1,5 +1,5 @@
 /* elf.c -- Get debug data from an ELF file for backtraces.
-   Copyright (C) 2012-2025 Free Software Foundation, Inc.
+   Copyright (C) 2012-2026 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Google.
 
 Redistribution and use in source and binary forms, with or without
@@ -160,10 +160,10 @@ dl_iterate_phdr (int (*callback) (struct dl_phdr_info *,
 #undef EI_CLASS
 #undef EI_DATA
 #undef EI_VERSION
-#undef ELF_MAG0
-#undef ELF_MAG1
-#undef ELF_MAG2
-#undef ELF_MAG3
+#undef ELFMAG0
+#undef ELFMAG1
+#undef ELFMAG2
+#undef ELFMAG3
 #undef ELFCLASS32
 #undef ELFCLASS64
 #undef ELFDATA2LSB
@@ -1147,7 +1147,10 @@ elf_fetch_bits (const unsigned char **ppin, const unsigned char *pinend,
   next = __builtin_bswap32 (next);
 #endif
 #else
-  next = pin[0] | (pin[1] << 8) | (pin[2] << 16) | (pin[3] << 24);
+  next = ((uint32_t)pin[0]
+	  | ((uint32_t)pin[1] << 8)
+	  | ((uint32_t)pin[2] << 16)
+	  | ((uint32_t)pin[3] << 24));
 #endif
 
   val |= (uint64_t)next << bits;
@@ -1198,7 +1201,10 @@ elf_fetch_bits_backward (const unsigned char **ppin,
   next = __builtin_bswap32 (next);
 #endif
 #else
-  next = pin[0] | (pin[1] << 8) | (pin[2] << 16) | (pin[3] << 24);
+  next = ((uint32_t)pin[0]
+	  | ((uint32_t)pin[1] << 8)
+	  | ((uint32_t)pin[2] << 16)
+	  | ((uint32_t)pin[3] << 24));
 #endif
 
   val <<= 32;
@@ -4332,15 +4338,17 @@ elf_zstd_unpack_seq_decode (int mode,
   return 1;
 }
 
-/* Decompress a zstd stream from PIN/SIN to POUT/SOUT.  Code based on RFC 8878.
+/* Decompress a single zstd frame from *PPIN, ending at PINEND, to *PPOUT/SOUT.
    Return 1 on success, 0 on error.  */
 
 static int
-elf_zstd_decompress (const unsigned char *pin, size_t sin,
-		     unsigned char *zdebug_table, unsigned char *pout,
-		     size_t sout)
+elf_zstd_decompress_frame (const unsigned char **ppin,
+			   const unsigned char *pinend,
+			   unsigned char *zdebug_table, unsigned char **ppout,
+			   size_t sout)
 {
-  const unsigned char *pinend;
+  const unsigned char *pin;
+  unsigned char *pout;
   unsigned char *poutstart;
   unsigned char *poutend;
   struct elf_zstd_seq_decode literal_decode;
@@ -4360,9 +4368,9 @@ elf_zstd_decompress (const unsigned char *pin, size_t sin,
   uint64_t content_size;
   int last_block;
 
-  pinend = pin + sin;
+  pin = *ppin;
+  pout = *ppout;
   poutstart = pout;
-  poutend = pout + sout;
 
   literal_decode.table = NULL;
   literal_decode.table_bits = -1;
@@ -4388,7 +4396,7 @@ elf_zstd_decompress (const unsigned char *pin, size_t sin,
   repeated_offset2 = 4;
   repeated_offset3 = 8;
 
-  if (unlikely (sin < 4))
+  if (unlikely (pinend - pin < 4))
     {
       elf_uncompress_failed ();
       return 0;
@@ -4486,11 +4494,13 @@ elf_zstd_decompress (const unsigned char *pin, size_t sin,
     }
 
   if (unlikely (content_size != (size_t) content_size
-		|| (size_t) content_size != sout))
+		|| (size_t) content_size > sout))
     {
       elf_uncompress_failed ();
       return 0;
     }
+
+  poutend = pout + content_size;
 
   last_block = 0;
   while (!last_block)
@@ -4990,7 +5000,42 @@ elf_zstd_decompress (const unsigned char *pin, size_t sin,
       pin += 4;
     }
 
-  if (pin != pinend)
+  *ppin = pin;
+  *ppout = pout;
+
+  return 1;
+}
+
+/* Decompress a zstd stream from PIN/SIN to POUT/SOUT.  Code based on RFC 8878.
+   Return 1 on success, 0 on error.  */
+
+static int
+elf_zstd_decompress (const unsigned char *pin, size_t sin,
+		     unsigned char *zdebug_table, unsigned char *pout,
+		     size_t sout)
+{
+  const unsigned char *pinend;
+
+  pinend = pin + sin;
+
+  while (sin > 0)
+    {
+      const unsigned char *pin_frame;
+      unsigned char *pout_frame;
+
+      pin_frame = pin;
+      pout_frame = pout;
+      if (!elf_zstd_decompress_frame (&pin_frame, pinend, zdebug_table,
+				      &pout_frame, sout))
+	return 0;
+
+      sin -= pin_frame - pin;
+      pin = pin_frame;
+      sout -= pout_frame - pout;
+      pout = pout_frame;
+    }
+
+  if (sout > 0)
     {
       elf_uncompress_failed ();
       return 0;
@@ -5872,10 +5917,10 @@ elf_uncompress_lzma_block (const unsigned char *compressed,
 	  /* The byte at compressed[off] is ignored for some
 	     reason.  */
 
-	  code = ((compressed[off + 1] << 24)
-		  + (compressed[off + 2] << 16)
-		  + (compressed[off + 3] << 8)
-		  + compressed[off + 4]);
+	  code = (((uint32_t)compressed[off + 1] << 24)
+		  + ((uint32_t)compressed[off + 2] << 16)
+		  + ((uint32_t)compressed[off + 3] << 8)
+		  + (uint32_t)compressed[off + 4]);
 	  off += 5;
 
 	  /* This is the main LZMA decode loop.  */
@@ -6198,10 +6243,10 @@ elf_uncompress_lzma_block (const unsigned char *compressed,
 	  return 0;
 	}
       computed_crc = elf_crc32 (0, uncompressed, uncompressed_offset);
-      stream_crc = (compressed[off]
-		    | (compressed[off + 1] << 8)
-		    | (compressed[off + 2] << 16)
-		    | (compressed[off + 3] << 24));
+      stream_crc = ((uint32_t)compressed[off]
+		    | ((uint32_t)compressed[off + 1] << 8)
+		    | ((uint32_t)compressed[off + 2] << 16)
+		    | ((uint32_t)compressed[off + 3] << 24));
       if (computed_crc != stream_crc)
 	{
 	  elf_uncompress_failed ();
@@ -6336,10 +6381,10 @@ elf_uncompress_lzma (struct backtrace_state *state,
 
   /* Before that is the size of the index field, which precedes the
      footer.  */
-  index_size = (compressed[offset - 4]
-		| (compressed[offset - 3] << 8)
-		| (compressed[offset - 2] << 16)
-		| (compressed[offset - 1] << 24));
+  index_size = ((size_t)compressed[offset - 4]
+		| ((size_t)compressed[offset - 3] << 8)
+		| ((size_t)compressed[offset - 2] << 16)
+		| ((size_t)compressed[offset - 1] << 24));
   index_size = (index_size + 1) * 4;
   offset -= 4;
 

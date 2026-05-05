@@ -1,4 +1,4 @@
-// Copyright (C) 2024-2025 Free Software Foundation, Inc.
+// Copyright (C) 2024-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -85,11 +85,13 @@ expand_format_args (AST::FormatArgs &fmt,
 	  static_pieces.emplace_back (
 	    builder.literal_string (node.string._0.to_string ()));
 	  break;
-	  case ffi::Piece::Tag::NextArgument: {
+	case ffi::Piece::Tag::NextArgument:
+	  {
 	    auto next_argument = node.next_argument._0;
 	    switch (node.next_argument._0.position.tag)
 	      {
-		case ffi::Position::Tag::ArgumentImplicitlyIs: {
+	      case ffi::Position::Tag::ArgumentImplicitlyIs:
+		{
 		  auto idx = next_argument.position.argument_implicitly_is._0;
 		  auto trait = next_argument.format;
 		  auto arg = arguments.at (idx);
@@ -120,7 +122,7 @@ expand_format_args (AST::FormatArgs &fmt,
   auto pieces = builder.ref (builder.array (std::move (static_pieces)));
   auto args_slice = builder.ref (builder.array (std::move (args_array)));
 
-  auto final_path = make_unique<AST::PathInExpression> (
+  auto final_path = std::make_unique<AST::PathInExpression> (
     builder.path_in_expression ({"core", "fmt", "Arguments", "new_v1"}));
   auto final_args = std::vector<std::unique_ptr<AST::Expr>> ();
   final_args.emplace_back (std::move (pieces));

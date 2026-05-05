@@ -1,8 +1,10 @@
-import core.gc.registry;
 import core.gc.gcinterface;
-import core.stdc.stdlib;
+import core.gc.registry;
+import core.stdc.stdlib : calloc, malloc, realloc;
 
 static import core.memory;
+
+import core.thread.threadbase : ThreadBase;
 
 extern (C) __gshared string[] rt_options = ["gcopt=gc:malloc"];
 
@@ -207,6 +209,14 @@ nothrow @nogc:
     bool shrinkArrayUsed(void[] slice, size_t existingUsed, bool atomic = false) nothrow
     {
         return false;
+    }
+
+    void initThread(ThreadBase thread) nothrow @nogc
+    {
+    }
+
+    void cleanupThread(ThreadBase thread) nothrow @nogc
+    {
     }
 
 private:

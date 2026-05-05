@@ -1,5 +1,5 @@
 ;; ARM Thumb-1 Machine Description
-;; Copyright (C) 2007-2025 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2026 Free Software Foundation, Inc.
 ;;
 ;; This file is part of GCC.
 ;;
@@ -1810,6 +1810,34 @@
    (set_attr "type" "multiple")]
 )
 
+;; Re-split an LEU/GEU sequence if combine tries to oversimplify a 3-plus
+;; insn sequence.  Beware of the early-clobber of operand0
+(define_split
+ [(set (match_operand:SI 0 "s_register_operand")
+       (leu:SI (match_operand:SI 1 "s_register_operand")
+	       (match_operand:SI 2 "s_register_operand")))]
+ "TARGET_THUMB1
+  && !reg_overlap_mentioned_p (operands[0], operands[1])
+  && !reg_overlap_mentioned_p (operands[0], operands[2])"
+ [(set (match_dup 0) (const_int 0))
+  (set (match_dup 0) (plus:SI (plus:SI (match_dup 0) (match_dup 0))
+			      (geu:SI (match_dup 2) (match_dup 1))))]
+ {}
+)
+
+(define_split
+ [(set (match_operand:SI 0 "s_register_operand")
+       (geu:SI (match_operand:SI 1 "s_register_operand")
+	       (match_operand:SI 2 "thumb1_cmp_operand")))]
+ "TARGET_THUMB1
+  && !reg_overlap_mentioned_p (operands[0], operands[1])
+  && !reg_overlap_mentioned_p (operands[0], operands[2])"
+ [(set (match_dup 0) (const_int 0))
+  (set (match_dup 0) (plus:SI (plus:SI (match_dup 0) (match_dup 0))
+			      (geu:SI (match_dup 1) (match_dup 2))))]
+ {}
+)
+
 
 (define_insn "*thumb_jump"
   [(set (pc)
@@ -1846,10 +1874,10 @@
 )
 
 (define_insn "*nonsecure_call_reg_thumb1_v5"
-  [(call (unspec:SI [(mem:SI (reg:SI R4_REGNUM))]
-		    UNSPEC_NONSECURE_MEM)
+  [(call (mem:SI (reg:SI R4_REGNUM))
 	 (match_operand 0 "" ""))
    (use (match_operand 1 "" ""))
+   (unspec:SI [(match_operand 2)]UNSPEC_NONSECURE_MEM)
    (clobber (reg:SI LR_REGNUM))]
   "TARGET_THUMB1 && use_cmse && !SIBLING_CALL_P (insn)"
   "bl\\t__gnu_cmse_nonsecure_call"
@@ -1891,11 +1919,10 @@
 
 (define_insn "*nonsecure_call_value_reg_thumb1_v5"
   [(set (match_operand 0 "" "")
-	(call (unspec:SI
-	       [(mem:SI (reg:SI R4_REGNUM))]
-	       UNSPEC_NONSECURE_MEM)
+	(call (mem:SI (reg:SI R4_REGNUM))
 	      (match_operand 1 "" "")))
    (use (match_operand 2 "" ""))
+   (unspec:SI [(match_operand 3)] UNSPEC_NONSECURE_MEM)
    (clobber (reg:SI LR_REGNUM))]
   "TARGET_THUMB1 && use_cmse"
   "bl\\t__gnu_cmse_nonsecure_call"

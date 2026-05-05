@@ -1,6 +1,7 @@
 /* { dg-do compile } */
-/* { dg-options "-fdiagnostics-path-format=inline-events -fdiagnostics-show-caret -fdiagnostics-show-line-numbers" } */
+/* { dg-options "-fdiagnostics-path-format=inline-events -fdiagnostics-show-caret -fdiagnostics-show-line-numbers -fdiagnostics-add-output=experimental-html:javascript=no" } */
 /* { dg-enable-nn-line-numbers "" } */
+/* { dg-require-effective-target signal } */
 
 #include <stdio.h>
 #include <signal.h>
@@ -82,3 +83,7 @@ void test (void)
                   |      |   (9) calling 'fprintf'
                   |
    { dg-end-multiline-output "" } */
+
+/* Use a Python script to verify various properties about the generated
+   HTML file:
+   { dg-final { run-html-pytest diagnostic-test-paths-4.c "diagnostic-test-paths-4.py" } } */

@@ -1,8 +1,7 @@
-#[lang = "sized"]
-// { dg-skip-if "" { *-*-* } }
-pub trait Sized {}
+#![feature(no_core)]
+#![no_core]
 
-trait Foo<T> {
+trait Foo {
     type A;
 
     fn test(a: Self::A) -> Self::A {
@@ -10,9 +9,14 @@ trait Foo<T> {
     }
 }
 
-struct Bar<T>(T);
-impl<T> Foo<T> for Bar<i32> {
-    type A = T;
+struct Bar(i32);
+impl Foo for Bar {
+    type A = i32;
+}
+
+struct Baz(f32);
+impl Foo for Baz {
+    type A = f32;
 }
 
 fn main() {
@@ -21,4 +25,10 @@ fn main() {
 
     let b;
     b = Bar::test(a.0);
+
+    let c;
+    c = Baz(123f32);
+
+    let d;
+    d = Baz::test(c.0);
 }

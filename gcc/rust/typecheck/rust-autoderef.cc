@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -26,8 +26,7 @@
 namespace Rust {
 namespace Resolver {
 
-static bool
-resolve_operator_overload_fn (
+static bool resolve_operator_overload_fn (
   LangItem::Kind lang_item_type, TyTy::BaseType *ty, TyTy::FnType **resolved_fn,
   Adjustment::AdjustmentType *requires_ref_adjustment);
 
@@ -104,16 +103,16 @@ Adjuster::try_unsize_type (TyTy::BaseType *ty)
   if (!is_valid_type)
     return Adjustment::get_error ();
 
-  auto mappings = Analysis::Mappings::get ();
+  auto &mappings = Analysis::Mappings::get ();
   auto context = TypeCheckContext::get ();
 
   const auto ref_base = static_cast<const TyTy::ArrayType *> (ty);
   auto slice_elem = ref_base->get_element_type ();
 
   auto slice
-    = new TyTy::SliceType (mappings->get_next_hir_id (), ty->get_ident ().locus,
+    = new TyTy::SliceType (mappings.get_next_hir_id (), ty->get_ident ().locus,
 			   TyTy::TyVar (slice_elem->get_ref ()));
-  context->insert_implicit_type (slice);
+  context->insert_implicit_type (slice->get_ref (), slice);
 
   return Adjustment (Adjustment::AdjustmentType::UNSIZE, ty, slice);
 }
@@ -125,16 +124,15 @@ resolve_operator_overload_fn (
   Adjustment::AdjustmentType *requires_ref_adjustment)
 {
   auto context = TypeCheckContext::get ();
-  auto mappings = Analysis::Mappings::get ();
+  auto &mappings = Analysis::Mappings::get ();
 
   // look up lang item for arithmetic type
   std::string associated_item_name = LangItem::ToString (lang_item_type);
-  DefId respective_lang_item_id = UNKNOWN_DEFID;
-  bool lang_item_defined
-    = mappings->lookup_lang_item (lang_item_type, &respective_lang_item_id);
+  auto lang_item_defined = mappings.lookup_lang_item (lang_item_type);
 
   if (!lang_item_defined)
     return false;
+  DefId &respective_lang_item_id = lang_item_defined.value ();
 
   // we might be in a static or const context and unknown is fine
   TypeCheckContextItem current_context = TypeCheckContextItem::get_error ();
@@ -210,7 +208,7 @@ resolve_operator_overload_fn (
 	       == 0)
 	{
 	  TraitReference *trait_reference
-	    = TraitResolver::Lookup (*parent->get_trait_ref ().get ());
+	    = TraitResolver::Lookup (parent->get_trait_ref ());
 	  if (!trait_reference->is_error ())
 	    {
 	      TyTy::BaseType *lookup = nullptr;
@@ -249,7 +247,6 @@ resolve_operator_overload_fn (
 	  const TyTy::ADTType *adt = static_cast<const TyTy::ADTType *> (lhs);
 
 	  auto s = fn->get_self_type ()->get_root ();
-	  rust_assert (s->can_eq (adt, false));
 	  rust_assert (s->get_kind () == TyTy::TypeKind::ADT);
 	  const TyTy::ADTType *self_adt
 	    = static_cast<const TyTy::ADTType *> (s);
@@ -293,7 +290,7 @@ resolve_operator_overload_fn (
 	  rust_assert (lookup->get_kind () == TyTy::TypeKind::FNDEF);
 	  fn = static_cast<TyTy::FnType *> (lookup);
 
-	  location_t unify_locus = mappings->lookup_location (lhs->get_ref ());
+	  location_t unify_locus = mappings.lookup_location (lhs->get_ref ());
 	  unify_site (lhs->get_ref (),
 		      TyTy::TyWithLocation (fn->get_self_type ()),
 		      TyTy::TyWithLocation (adjusted_self), unify_locus);
@@ -428,8 +425,7 @@ AutoderefCycle::try_autoderefed (TyTy::BaseType *r)
   TyTy::ReferenceType *r1
     = new TyTy::ReferenceType (r->get_ref (), TyTy::TyVar (r->get_ref ()),
 			       Mutability::Imm);
-  adjustments.push_back (
-    Adjustment (Adjustment::AdjustmentType::IMM_REF, r, r1));
+  adjustments.emplace_back (Adjustment::AdjustmentType::IMM_REF, r, r1);
   if (select (*r1))
     return true;
 
@@ -439,8 +435,7 @@ AutoderefCycle::try_autoderefed (TyTy::BaseType *r)
   TyTy::ReferenceType *r2
     = new TyTy::ReferenceType (r->get_ref (), TyTy::TyVar (r->get_ref ()),
 			       Mutability::Mut);
-  adjustments.push_back (
-    Adjustment (Adjustment::AdjustmentType::MUT_REF, r, r2));
+  adjustments.emplace_back (Adjustment::AdjustmentType::MUT_REF, r, r2);
   if (select (*r2))
     return true;
 

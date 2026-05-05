@@ -77,9 +77,11 @@ T* emplace(T, Args...)(T* chunk, auto ref Args args)
 @betterC
 @system unittest
 {
+    import core.atomic : atomicLoad;
+
     shared int i;
     emplace(&i, 42);
-    assert(i == 42);
+    assert(atomicLoad(i) == 42);
 }
 
 /**
@@ -1246,9 +1248,21 @@ void copyEmplace(S, T)(ref S source, ref T target) @system
     if (is(immutable S == immutable T))
 {
     import core.internal.traits : BaseElemOf, hasElaborateCopyConstructor, Unconst, Unqual;
+    enum isSharedReference = is(S == shared U, U) && is(T == shared V, V) &&
+        (is(U == class) || is(U == interface)) &&
+        (is(V == class) || is(V == interface));
 
     // cannot have the following as simple template constraint due to nested-struct special case...
-    static if (!__traits(compiles, (ref S src) { T tgt = src; }))
+    static if (isSharedReference)
+    {
+        static assert(__traits(compiles, (ref S src, ref T tgt)
+        {
+            import core.atomic : atomicLoad, atomicStore;
+            atomicStore(tgt, atomicLoad(src));
+        }), "cannot copy shared reference " ~ T.stringof ~ " from " ~ S.stringof ~
+            " via atomic load/store");
+    }
+    else static if (!__traits(compiles, (ref S src) { T tgt = src; }))
     {
         alias B = BaseElemOf!T;
         enum isNestedStruct = is(B == struct) && __traits(isNested, B);
@@ -1307,6 +1321,11 @@ void copyEmplace(S, T)(ref S source, ref T target) @system
         {
             blit(); // all elements at once
         }
+    }
+    else static if (isSharedReference)
+    {
+        import core.atomic : atomicLoad, atomicStore;
+        atomicStore(target, atomicLoad(source));
     }
     else
     {
@@ -2396,7 +2415,7 @@ template _d_delstructImpl(T)
         private enum errorMessage = "Cannot delete struct if compiling without support for runtime type information!";
 
         /**
-         * TraceGC wrapper around $(REF _d_delstruct, core,lifetime,_d_delstructImpl).
+         * TraceGC wrapper around $(REF _d_delstruct, core,lifetime).
          *
          * Bugs:
          *   This function template was ported from a much older runtime hook that
@@ -2600,11 +2619,13 @@ pure nothrow @system unittest
 }
 
 // wipes source after moving
-pragma(inline, true)
 private void wipe(T, Init...)(return scope ref T source, ref const scope Init initializer) @trusted
 if (!Init.length ||
     ((Init.length == 1) && (is(immutable T == immutable Init[0]))))
 {
+    static if (!is(T == struct) || !__traits(isNested, T))
+        pragma(inline, true);
+
     static if (__traits(isStaticArray, T) && hasContextPointers!T)
     {
         for (auto i = 0; i < T.length; i++)
@@ -2760,7 +2781,10 @@ if (is(T == class))
         static if (!hasIndirections!T)
             attr |= BlkAttr.NO_SCAN;
 
-        p = GC.malloc(init.length, attr, typeid(T));
+        version(D_TypeInfo)
+            p = GC.malloc(init.length, attr, typeid(T));
+        else
+            p = GC.malloc(init.length, attr, null);
         debug(PRINTF) printf(" p = %p\n", p);
     }
 
@@ -2788,12 +2812,12 @@ if (is(T == class))
 /**
  * TraceGC wrapper around $(REF _d_newclassT, core,lifetime).
  */
-T _d_newclassTTrace(T)(string file, int line, string funcname) @trusted
+T _d_newclassTTrace(T)(string file = __FILE__, int line = __LINE__, string funcname = __FUNCTION__) @trusted
 {
     version (D_TypeInfo)
     {
         import core.internal.array.utils : TraceHook, gcStatsPure, accumulatePure;
-        mixin(TraceHook!(T.stringof, "_d_newclassT"));
+        mixin(TraceHook!("T", "_d_newclassT"));
 
         return _d_newclassT!T();
     }
@@ -2828,21 +2852,14 @@ T* _d_newitemT(T)() @trusted
     import core.memory : GC;
 
     auto flags = !hasIndirections!T ? GC.BlkAttr.NO_SCAN : GC.BlkAttr.NONE;
-    immutable tiSize = TypeInfoSize!T;
     immutable itemSize = T.sizeof;
-    immutable totalSize = itemSize + tiSize;
-    if (tiSize)
-        flags |= GC.BlkAttr.STRUCTFINAL | GC.BlkAttr.FINALIZE;
+    if (TypeInfoSize!T)
+        flags |= GC.BlkAttr.FINALIZE;
 
-    auto blkInfo = GC.qalloc(totalSize, flags, null);
-    auto p = blkInfo.base;
-
-    if (tiSize)
-    {
-        // The GC might not have cleared the padding area in the block.
-        *cast(TypeInfo*) (p + (itemSize & ~(size_t.sizeof - 1))) = null;
-        *cast(TypeInfo*) (p + blkInfo.size - tiSize) = cast() typeid(T);
-    }
+    version(D_TypeInfo)
+        auto p = GC.malloc(itemSize, flags, typeid(T));
+    else
+        auto p = GC.malloc(itemSize, flags, null);
 
     emplaceInitializer(*(cast(T*) p));
 
@@ -2995,12 +3012,21 @@ version (D_ProfileGC)
     /**
     * TraceGC wrapper around $(REF _d_newitemT, core,lifetime).
     */
-    T* _d_newitemTTrace(T)(string file, int line, string funcname) @trusted
+    T* _d_newitemTTrace(T)(string file = __FILE__, int line = __LINE__, string funcname = __FUNCTION__) @trusted
     {
         version (D_TypeInfo)
         {
+            static if (is(T == struct))
+            {
+                // prime the TypeInfo name, we don't want that affecting the allocated bytes
+                // Issue https://github.com/dlang/dmd/issues/20832
+                static string typeName(TypeInfo_Struct ti) nothrow @trusted => ti.name;
+                auto tnPure = cast(string function(TypeInfo_Struct ti) nothrow pure @trusted)&typeName;
+                cast(void)tnPure(typeid(T));
+            }
+
             import core.internal.array.utils : TraceHook, gcStatsPure, accumulatePure;
-            mixin(TraceHook!(T.stringof, "_d_newitemT"));
+            mixin(TraceHook!("T", "_d_newitemT"));
 
             return _d_newitemT!T();
         }

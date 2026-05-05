@@ -1,4 +1,4 @@
-/* Copyright (C) 2008-2025 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2026 Free Software Foundation, Inc.
 
 This file is part of GCC.
 
@@ -96,6 +96,8 @@ struct gfc_cpp_option_data
   int deps_skip_system;                 /* -MM */
   const char *deps_filename;            /* -M[M]D */
   const char *deps_filename_user;       /* -MF <arg> */
+  const char *deps_target_filename;     /* -MT / -MQ <arg> */
+  bool quote_deps_target_filename;      /* -MQ */
   int deps_missing_are_generated;       /* -MG */
   int deps_phony;                       /* -MP */
   int warn_date_time;                   /* -Wdate-time */
@@ -173,7 +175,7 @@ cpp_define_builtins (cpp_reader *pfile)
     cpp_define (pfile, "_OPENACC=201711");
 
   if (flag_openmp)
-    cpp_define (pfile, "_OPENMP=201511");
+    cpp_define (pfile, "_OPENMP=202111");
 
   /* The defines below are necessary for the TARGET_* macros.
 
@@ -287,6 +289,8 @@ gfc_cpp_init_options (unsigned int decoded_options_count,
   gfc_cpp_option.deps_missing_are_generated = 0;
   gfc_cpp_option.deps_filename = NULL;
   gfc_cpp_option.deps_filename_user = NULL;
+  gfc_cpp_option.deps_target_filename = NULL;
+  gfc_cpp_option.quote_deps_target_filename = false;
 
   gfc_cpp_option.multilib = NULL;
   gfc_cpp_option.prefix = NULL;
@@ -439,9 +443,8 @@ gfc_cpp_handle_option (size_t scode, const char *arg, int value ATTRIBUTE_UNUSED
 
     case OPT_MQ:
     case OPT_MT:
-      gfc_cpp_option.deferred_opt[gfc_cpp_option.deferred_opt_count].code = code;
-      gfc_cpp_option.deferred_opt[gfc_cpp_option.deferred_opt_count].arg = arg;
-      gfc_cpp_option.deferred_opt_count++;
+      gfc_cpp_option.quote_deps_target_filename = (code == OPT_MQ);
+      gfc_cpp_option.deps_target_filename = arg;
       break;
 
     case OPT_P:
@@ -593,6 +596,12 @@ gfc_cpp_init_0 (void)
     }
 
   gcc_assert(cpp_in);
+
+  if (gfc_cpp_option.deps_target_filename)
+    if (mkdeps *deps = cpp_get_deps (cpp_in))
+      deps_add_target (deps, gfc_cpp_option.deps_target_filename,
+		       gfc_cpp_option.quote_deps_target_filename);
+
   if (!cpp_read_main_file (cpp_in, gfc_source_file))
     errorcount++;
 }
@@ -635,9 +644,6 @@ gfc_cpp_init (void)
 	  else
 	    cpp_assert (cpp_in, opt->arg);
 	}
-      else if (opt->code == OPT_MT || opt->code == OPT_MQ)
-	if (mkdeps *deps = cpp_get_deps (cpp_in))
-	  deps_add_target (deps, opt->arg, opt->code == OPT_MQ);
     }
 
   /* Pre-defined macros for non-required INTEGER kind types.  */
@@ -672,6 +678,13 @@ gfc_cpp_preprocess (const char *source_file)
 {
   if (!gfc_cpp_enabled ())
     return false;
+
+  if (gfc_option.flag_preprocessed)
+    {
+      if (gfc_cpp_preprocess_only ())
+	gfc_fatal_error ("%<-E%> is not supported with %<-fpreprocessed%>");
+      return false;
+    }
 
   cpp_change_file (cpp_in, LC_RENAME, source_file);
 
@@ -1057,7 +1070,7 @@ cb_used_define (cpp_reader *pfile, location_t line ATTRIBUTE_UNUSED,
 /* Return the gcc option code associated with the reason for a cpp
    message, or 0 if none.  */
 
-static diagnostic_option_id
+static diagnostics::option_id
 cb_cpp_diagnostic_cpp_option (enum cpp_warning_reason reason)
 {
   const struct cpp_reason_option_codes_t *entry;
@@ -1082,8 +1095,8 @@ cb_cpp_diagnostic (cpp_reader *pfile ATTRIBUTE_UNUSED,
 		   rich_location *richloc,
 		   const char *msg, va_list *ap)
 {
-  diagnostic_info diagnostic;
-  diagnostic_t dlevel;
+  diagnostics::diagnostic_info diagnostic;
+  enum diagnostics::kind dlevel;
   bool save_warn_system_headers = global_dc->m_warn_system_headers;
   bool ret;
 
@@ -1093,22 +1106,22 @@ cb_cpp_diagnostic (cpp_reader *pfile ATTRIBUTE_UNUSED,
       global_dc->m_warn_system_headers = 1;
       /* Fall through.  */
     case CPP_DL_WARNING:
-      dlevel = DK_WARNING;
+      dlevel = diagnostics::kind::warning;
       break;
     case CPP_DL_PEDWARN:
-      dlevel = DK_PEDWARN;
+      dlevel = diagnostics::kind::pedwarn;
       break;
     case CPP_DL_ERROR:
-      dlevel = DK_ERROR;
+      dlevel = diagnostics::kind::error;
       break;
     case CPP_DL_ICE:
-      dlevel = DK_ICE;
+      dlevel = diagnostics::kind::ice;
       break;
     case CPP_DL_NOTE:
-      dlevel = DK_NOTE;
+      dlevel = diagnostics::kind::note;
       break;
     case CPP_DL_FATAL:
-      dlevel = DK_FATAL;
+      dlevel = diagnostics::kind::fatal;
       break;
     default:
       gcc_unreachable ();

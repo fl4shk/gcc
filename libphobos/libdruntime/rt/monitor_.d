@@ -8,7 +8,26 @@
  */
 module rt.monitor_;
 
-import core.atomic, core.stdc.stdlib, core.stdc.string;
+import core.atomic;
+import core.stdc.stdlib : calloc, free, realloc;
+import core.stdc.string : memmove;
+
+version (Windows)
+{
+    import core.sys.windows.winbase /+: CRITICAL_SECTION, DeleteCriticalSection,
+        EnterCriticalSection, InitializeCriticalSection, LeaveCriticalSection+/;
+}
+else version (Posix)
+{
+    import core.sys.posix.pthread : pthread_mutex_destroy, pthread_mutex_init, pthread_mutex_lock,
+        PTHREAD_MUTEX_RECURSIVE, pthread_mutex_unlock, pthread_mutexattr_destroy, pthread_mutexattr_init,
+        pthread_mutexattr_settype;
+    import core.sys.posix.sys.types : pthread_mutex_t, pthread_mutexattr_t;
+}
+else
+{
+    static assert(0, "Unsupported platform");
+}
 
 // NOTE: The dtor callback feature is only supported for monitors that are not
 //       supplied by the user.  The assumption is that any object with a user-
@@ -17,14 +36,14 @@ import core.atomic, core.stdc.stdlib, core.stdc.string;
 //       may not be safe or desirable.  Thus, devt is only valid if impl is
 //       null.
 
-extern (C) void _d_setSameMutex(shared Object ownee, shared Object owner) nothrow
+extern (C) void _d_setSameMutex(shared Object ownee, shared Object owner) @trusted nothrow
 in
 {
     assert(ownee.__monitor is null);
 }
 do
 {
-    auto m = ensureMonitor(cast(Object) owner);
+    auto m = ensureMonitor(cast(Object) cast(void*) owner);
     if (m.impl is null)
     {
         atomicOp!"+="(m.refs, size_t(1));
@@ -173,9 +192,6 @@ alias DEvent = void delegate(Object);
 
 version (Windows)
 {
-    import core.sys.windows.winbase /+: CRITICAL_SECTION, DeleteCriticalSection,
-        EnterCriticalSection, InitializeCriticalSection, LeaveCriticalSection+/;
-
     alias Mutex = CRITICAL_SECTION;
 
     alias initMutex = InitializeCriticalSection;
@@ -185,11 +201,6 @@ version (Windows)
 }
 else version (Posix)
 {
-    import core.sys.posix.pthread : pthread_mutex_destroy, pthread_mutex_init, pthread_mutex_lock,
-        PTHREAD_MUTEX_RECURSIVE, pthread_mutex_unlock, pthread_mutexattr_destroy, pthread_mutexattr_init,
-        pthread_mutexattr_settype;
-    import core.sys.posix.sys.types : pthread_mutex_t, pthread_mutexattr_t;
-
 @nogc:
     alias Mutex = pthread_mutex_t;
     __gshared pthread_mutexattr_t gattr;
@@ -214,10 +225,6 @@ else version (Posix)
         pthread_mutex_unlock(mtx) && assert(0);
     }
 }
-else
-{
-    static assert(0, "Unsupported platform");
-}
 
 struct Monitor
 {
@@ -229,22 +236,22 @@ struct Monitor
 
 private:
 
-@property ref shared(Monitor*) monitor(return scope Object h) pure nothrow @nogc
+__gshared Mutex gmtx;
+
+shared(Monitor*)* monitorPtr(return scope Object h) pure nothrow @nogc @trusted
 {
-    return *cast(shared Monitor**)&h.__monitor;
+    return cast(shared(Monitor*)*) &h.__monitor;
 }
 
 shared(Monitor)* getMonitor(Object h) pure @nogc
 {
-    return atomicLoad!(MemoryOrder.acq)(h.monitor);
+    return atomicLoad!(MemoryOrder.acq)(*monitorPtr(h));
 }
 
 void setMonitor(Object h, shared(Monitor)* m) pure @nogc
 {
-    atomicStore!(MemoryOrder.rel)(h.monitor, m);
+    atomicStore!(MemoryOrder.rel)(*monitorPtr(h), m);
 }
-
-__gshared Mutex gmtx;
 
 shared(Monitor)* ensureMonitor(Object h)
 {

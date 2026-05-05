@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -21,14 +21,20 @@
 #include "optional.h"
 #include "bi-map.h"
 
+#ifndef RUST_LANG_ITEM_H
+#define RUST_LANG_ITEM_H
+
 namespace Rust {
 
-// https://github.com/rust-lang/rust/blob/master/library/core/src/ops/arith.rs
 class LangItem
 {
 public:
+  // FIXME: We should clean up that enum to make it more inline with the list of
+  // lang-items in Rust 1.49
+  // https://github.com/rust-lang/rust/blob/1.49.0/compiler/rustc_hir/src/lang_items.rs
   enum class Kind
   {
+    // https://github.com/rust-lang/rust/blob/master/library/core/src/ops/arith.rs
     ADD,
     SUBTRACT,
     MULTIPLY,
@@ -42,6 +48,8 @@ public:
 
     NEGATION,
     NOT,
+    EQ,
+    PARTIAL_ORD,
 
     ADD_ASSIGN,
     SUB_ASSIGN,
@@ -56,6 +64,7 @@ public:
 
     DEREF,
     DEREF_MUT,
+    RECEIVER,
 
     // https://github.com/rust-lang/rust/blob/master/library/core/src/ops/index.rs
     INDEX,
@@ -82,6 +91,7 @@ public:
     COPY,
     CLONE,
     SIZED,
+    SYNC,
 
     // https://github.com/Rust-GCC/gccrs/issues/1896
     // https://github.com/rust-lang/rust/commit/afbecc0f68c4dcfc4878ba5bcb1ac942544a1bdc
@@ -116,16 +126,52 @@ public:
     STR,
     F32_RUNTIME,
     F64_RUNTIME,
+
+    OPTION_SOME,
+    OPTION_NONE,
+
+    RESULT_OK,
+    RESULT_ERR,
+
+    INTOITER_INTOITER,
+    ITERATOR_NEXT,
+
+    // NOTE: These lang items are *not* necessarily present in later versions of
+    // Rust (I am unsure at which point they have been removed as the `Try`
+    // trait is unstable). They will need to be changed when updating the
+    // targeted Rust version of gccrs
+    TRY,
+    TRY_INTO_RESULT,
+    TRY_FROM_ERROR,
+    TRY_FROM_OK,
+
+    // NOTE: This is not a lang item in later versions of Rust
+    FROM_FROM,
+
+    STRUCTURAL_PEQ,
+    STRUCTURAL_TEQ,
+
+    DISCRIMINANT_TYPE,
+    DISCRIMINANT_KIND,
+
+    MANUALLY_DROP,
   };
 
   static const BiMap<std::string, Kind> lang_items;
 
   static tl::optional<Kind> Parse (const std::string &item);
+
   static std::string ToString (Kind type);
+  static std::string PrettyString (Kind type);
+
   static Kind OperatorToLangItem (ArithmeticOrLogicalOperator op);
   static Kind
   CompoundAssignmentOperatorToLangItem (ArithmeticOrLogicalOperator op);
   static Kind NegationOperatorToLangItem (NegationOperator op);
+  static Kind ComparisonToLangItem (ComparisonOperator op);
+  static std::string ComparisonToSegment (ComparisonOperator op);
+
+  static bool IsEnumVariant (Kind type);
 };
 
 } // namespace Rust
@@ -142,3 +188,5 @@ template <> struct hash<Rust::LangItem::Kind>
   }
 };
 } // namespace std
+
+#endif // RUST_LANG_ITEM_H

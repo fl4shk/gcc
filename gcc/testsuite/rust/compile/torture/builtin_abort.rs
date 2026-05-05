@@ -1,4 +1,7 @@
 // { dg-options "-fdump-tree-original"  }
+#![feature(no_core)]
+#![no_core]
+
 
 // { dg-final { scan-assembler-not "__builtin_abort\[^\"\]" } }
 // { dg-final { scan-tree-dump "__builtin_abort" "original" } }
@@ -12,7 +15,7 @@ mod intrinsics {
     }
 }
 
-pub fn main () -> i32 {
-    abort();
+pub fn main() -> i32 {
+    crate::intrinsics::abort();
     0
 }

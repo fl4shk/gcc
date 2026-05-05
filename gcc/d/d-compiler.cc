@@ -1,5 +1,5 @@
 /* d-compiler.cc -- D frontend interface to the gcc back-end.
-   Copyright (C) 2020-2025 Free Software Foundation, Inc.
+   Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 GCC is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "coretypes.h"
 
 #include "dmd/compiler.h"
+#include "dmd/errors.h"
 #include "dmd/expression.h"
 #include "dmd/identifier.h"
 #include "dmd/module.h"
@@ -46,10 +47,10 @@ Compiler::paintAsType (UnionExp *, Expression *expr, Type *type)
 
   Type *tb = type->toBasetype ();
 
-  if (expr->type->isIntegral ())
-    cst = build_integer_cst (expr->toInteger (), build_ctype (expr->type));
-  else if (expr->type->isFloating ())
-    cst = build_float_cst (expr->toReal (), expr->type);
+  if (dmd::isIntegral (expr->type))
+    cst = build_integer_cst (dmd::toInteger (expr), build_ctype (expr->type));
+  else if (dmd::isFloating (expr->type))
+    cst = build_float_cst (dmd::toReal (expr), expr->type);
   else if (expr->op == EXP::arrayLiteral)
     {
       /* Build array as VECTOR_CST, assumes EXPR is constant.  */
@@ -60,15 +61,15 @@ Compiler::paintAsType (UnionExp *, Expression *expr, Type *type)
       for (size_t i = 0; i < elements->length; i++)
 	{
 	  Expression *e = (*elements)[i];
-	  if (e->type->isIntegral ())
+	  if (dmd::isIntegral (e->type))
 	    {
-	      tree value = build_integer_cst (e->toInteger (),
+	      tree value = build_integer_cst (dmd::toInteger (e),
 					      build_ctype (e->type));
 	      CONSTRUCTOR_APPEND_ELT (elms, size_int (i), value);
 	    }
-	  else if (e->type->isFloating ())
+	  else if (dmd::isFloating (e->type))
 	    {
-	      tree value = build_float_cst (e->toReal (), e->type);
+	      tree value = build_float_cst (dmd::toReal (e), e->type);
 	      CONSTRUCTOR_APPEND_ELT (elms, size_int (i), value);
 	    }
 	  else
@@ -76,7 +77,7 @@ Compiler::paintAsType (UnionExp *, Expression *expr, Type *type)
 	}
 
       /* Build vector type.  */
-      int nunits = expr->type->isTypeSArray ()->dim->toUInteger ();
+      int nunits = dmd::toUInteger (expr->type->isTypeSArray ()->dim);
       Type *telem = expr->type->nextOf ();
       tree vectype = build_vector_type (build_ctype (telem), nunits);
 
@@ -92,7 +93,7 @@ Compiler::paintAsType (UnionExp *, Expression *expr, Type *type)
     {
       /* Interpret value as a vector of the same size,
 	 then return the array literal.  */
-      int nunits = type->isTypeSArray ()->dim->toUInteger ();
+      int nunits = dmd::toUInteger (type->isTypeSArray ()->dim);
       Type *elem = type->nextOf ();
       tree vectype = build_vector_type (build_ctype (elem), nunits);
 
@@ -164,7 +165,39 @@ Compiler::onParseModule (Module *m)
    driver intends on compiling the import.  */
 
 bool
-Compiler::onImport (Module *)
+Compiler::onImport (Module *m)
 {
-  return false;
+  if (!includeImports)
+    return false;
+
+  if (m->filetype != FileType::d && m->filetype != FileType::c)
+    return false;
+
+  /* All imports modules are included except those in the runtime library.  */
+  ModuleDeclaration *md = m->md;
+  if (md && md->id)
+    {
+      if (md->packages.length >= 1)
+	{
+	  if (!strcmp (md->packages.ptr[0]->toChars (), "core")
+	      || !strcmp (md->packages.ptr[0]->toChars (), "std")
+	      || !strcmp (md->packages.ptr[0]->toChars (), "gcc")
+	      || !strcmp (md->packages.ptr[0]->toChars (), "etc"))
+	    return false;
+	}
+      else if (!strcmp (md->id->toChars (), "object"))
+	return false;
+    }
+  else if (m->ident)
+    {
+      if (!strcmp (m->ident->toChars (), "object"))
+	return false;
+    }
+
+  /* This import will be compiled.  */
+  if (global.params.v.verbose)
+    message ("compileimport (%s)", m->srcfile.toChars ());
+
+  compiledImports.push (m);
+  return true;
 }

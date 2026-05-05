@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -31,16 +31,10 @@ protected:
 public:
   static tree compile (HIR::Item *item, Context *ctx,
 		       TyTy::BaseType *concrete = nullptr,
-		       bool is_query_mode = false,
 		       location_t ref_locus = UNDEF_LOCATION)
   {
     CompileItem compiler (ctx, concrete, ref_locus);
     item->accept_vis (compiler);
-
-    if (is_query_mode && compiler.reference == error_mark_node)
-      rust_internal_error_at (ref_locus, "failed to compile item: %s",
-			      item->as_string ().c_str ());
-
     return compiler.reference;
   }
 
@@ -50,9 +44,12 @@ public:
   void visit (HIR::ImplBlock &impl_block) override;
   void visit (HIR::ExternBlock &extern_block) override;
   void visit (HIR::Module &module) override;
+  void visit (HIR::TupleStruct &tuple_struct) override;
+  void visit (HIR::Enum &enum_decl) override;
+  void visit (HIR::Union &union_decl) override;
+  void visit (HIR::StructStruct &struct_decl) override;
 
   // Empty visit for unused Stmt HIR nodes.
-  void visit (HIR::TupleStruct &) override {}
   void visit (HIR::EnumItem &) override {}
   void visit (HIR::EnumItemTuple &) override {}
   void visit (HIR::EnumItemStruct &) override {}
@@ -63,9 +60,6 @@ public:
   void visit (HIR::ExternCrate &) override {}
   void visit (HIR::UseDeclaration &) override {}
   void visit (HIR::TypeAlias &) override {}
-  void visit (HIR::StructStruct &) override {}
-  void visit (HIR::Enum &) override {}
-  void visit (HIR::Union &) override {}
   void visit (HIR::Trait &) override {}
   void visit (HIR::EmptyStmt &) override {}
   void visit (HIR::LetStmt &) override {}

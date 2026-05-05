@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -30,8 +30,6 @@ public:
   static tree compile (Context *ctx, const TyTy::BaseType *ty,
 		       bool trait_object_mode = false);
 
-  static tree get_implicit_enumeral_node_type (Context *ctx);
-
   static tree get_unit_type (Context *ctx);
 
   void visit (const TyTy::InferType &) override;
@@ -52,12 +50,17 @@ public:
   void visit (const TyTy::ReferenceType &) override;
   void visit (const TyTy::PointerType &) override;
   void visit (const TyTy::ParamType &) override;
+  void visit (const TyTy::ConstParamType &) override;
+  void visit (const TyTy::ConstValueType &) override;
+  void visit (const TyTy::ConstInferType &) override;
+  void visit (const TyTy::ConstErrorType &) override;
   void visit (const TyTy::StrType &) override;
   void visit (const TyTy::NeverType &) override;
   void visit (const TyTy::PlaceholderType &) override;
   void visit (const TyTy::ProjectionType &) override;
   void visit (const TyTy::DynamicObjectType &) override;
   void visit (const TyTy::ClosureType &) override;
+  void visit (const TyTy::OpaqueType &) override;
 
 public:
   static hashval_t type_hasher (tree type);
@@ -66,6 +69,7 @@ protected:
   tree create_slice_type_record (const TyTy::SliceType &type);
   tree create_str_type_record (const TyTy::StrType &type);
   tree create_dyn_obj_record (const TyTy::DynamicObjectType &type);
+  tree get_implicit_enumeral_node_type (TyTy::BaseType *repr);
 
 private:
   TyTyResolveCompile (Context *ctx, bool trait_object_mode);

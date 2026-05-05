@@ -1,4 +1,4 @@
-// Copyright (C) 2020-2025 Free Software Foundation, Inc.
+// Copyright (C) 2020-2026 Free Software Foundation, Inc.
 
 // This file is part of GCC.
 
@@ -86,9 +86,11 @@ public:
 
   bool is_expression_fragment () const;
   bool is_type_fragment () const;
+  bool is_pattern_fragment () const;
 
   std::unique_ptr<Expr> take_expression_fragment ();
   std::unique_ptr<Type> take_type_fragment ();
+  std::unique_ptr<Pattern> take_pattern_fragment ();
 
   void accept_vis (ASTVisitor &vis);
 
@@ -119,8 +121,20 @@ private:
    * one Node will be extracted from the `nodes` vector
    */
   bool is_single_fragment () const;
-  bool is_single_fragment_of_kind (SingleASTNode::NodeType expected) const;
-  void assert_single_fragment (SingleASTNode::NodeType expected) const;
+  bool is_single_fragment_of_kind (SingleASTNode::Kind expected) const;
+  void assert_single_fragment (SingleASTNode::Kind expected) const;
+};
+
+enum class InvocKind
+{
+  Expr,
+  Semicoloned,
+};
+
+enum class AsmKind
+{
+  Global,
+  Inline
 };
 
 /**
@@ -128,7 +142,8 @@ private:
  * rust-macro-builtins.{h,cc}.
  */
 using MacroTranscriberFunc
-  = std::function<tl::optional<Fragment> (location_t, MacroInvocData &)>;
+  = std::function<tl::optional<Fragment> (location_t, MacroInvocData &,
+					  InvocKind semicolon)>;
 
 } // namespace AST
 } // namespace Rust

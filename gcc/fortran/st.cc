@@ -1,5 +1,5 @@
 /* Build executable statement trees.
-   Copyright (C) 2000-2025 Free Software Foundation, Inc.
+   Copyright (C) 2000-2026 Free Software Foundation, Inc.
    Contributed by Andy Vaught
 
 This file is part of GCC.
@@ -86,6 +86,10 @@ gfc_free_statement (gfc_code *p)
     gfc_free_expr (p->expr1);
   if (p->expr2)
     gfc_free_expr (p->expr2);
+  if (p->expr3)
+    gfc_free_expr (p->expr3);
+  if (p->expr4)
+    gfc_free_expr (p->expr4);
 
   switch (p->op)
     {
@@ -291,11 +295,11 @@ gfc_free_statement (gfc_code *p)
       break;
 
     case EXEC_OMP_END_CRITICAL:
-      free (CONST_CAST (char *, p->ext.omp_name));
+      free (const_cast<char *> (p->ext.omp_name));
       break;
 
     case EXEC_OMP_FLUSH:
-      gfc_free_omp_namelist (p->ext.omp_namelist, false, false, false, false);
+      gfc_free_omp_namelist (p->ext.omp_namelist, OMP_LIST_NONE);
       break;
 
     case EXEC_OMP_BARRIER:
@@ -304,6 +308,10 @@ gfc_free_statement (gfc_code *p)
     case EXEC_OMP_TASKGROUP:
     case EXEC_OMP_TASKWAIT:
     case EXEC_OMP_TASKYIELD:
+      break;
+
+    case EXEC_OMP_METADIRECTIVE:
+      gfc_free_omp_variants (p->ext.omp_variants);
       break;
 
     default:

@@ -1,5 +1,4 @@
 /* { dg-additional-options "-fanalyzer-call-summaries --param analyzer-min-snodes-for-call-summary=0" } */
-/* { dg-require-effective-target alloca } */
 
 /* There need to be at least two calls to a function for the
    call-summarization code to be used.
@@ -510,7 +509,7 @@ int consume_two_ints_from_va_list (__builtin_va_list ap)
   return i * j;
 }
 
-int test_consume_two_ints_from_va_list (__builtin_va_list ap1)
+void test_consume_two_ints_from_va_list (__builtin_va_list ap1)
 {
   int p1, p2;
   __builtin_va_list ap2;

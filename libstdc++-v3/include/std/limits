@@ -1,6 +1,6 @@
 // The template and inlines for the numeric_limits classes. -*- C++ -*-
 
-// Copyright (C) 1999-2025 Free Software Foundation, Inc.
+// Copyright (C) 1999-2026 Free Software Foundation, Inc.
 //
 // This file is part of the GNU ISO C++ Library.  This library is free
 // software; you can redistribute it and/or modify it under the
@@ -81,10 +81,15 @@
 // The default values are appropriate for many 32-bit targets.
 
 // GCC only intrinsically supports modulo integral types.  The only remaining
-// integral exceptional values is division by zero.  Only targets that do not
-// signal division by zero in some "hard to ignore" way should use false.
+// integral exceptional values is division by zero, but that's an operation,
+// not a value, and traps is about values that trap (Issue554), so there aren't
+// any for integral types.  The standard has numeric_limits<bool>::traps
+// explicitly set to false.  However, we used to set them all to true based on
+// the division-by-zero misinterpretation, so we retain this macro, and those
+// who relied on the misinterpretation can restore it with a command-line
+// define and revert the ABI-changing effects of this fix.
 #ifndef __glibcxx_integral_traps
-# define __glibcxx_integral_traps true
+# define __glibcxx_integral_traps false
 #endif
 
 // float
@@ -446,9 +451,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
       static _GLIBCXX_USE_CONSTEXPR bool is_bounded = true;
       static _GLIBCXX_USE_CONSTEXPR bool is_modulo = false;
 
-      // It is not clear what it means for a boolean type to trap.
-      // This is a DR on the LWG issue list.  Here, I use integer
-      // promotion semantics.
       static _GLIBCXX_USE_CONSTEXPR bool traps = __glibcxx_integral_traps;
       static _GLIBCXX_USE_CONSTEXPR bool tinyness_before = false;
       static _GLIBCXX_USE_CONSTEXPR float_round_style round_style
@@ -1639,7 +1641,6 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 #define __INT_N_U201103(TYPE)
 #endif
 
-#if !defined(__STRICT_ANSI__)
 #ifdef __GLIBCXX_TYPE_INT_N_0
   __INT_N(__GLIBCXX_TYPE_INT_N_0, __GLIBCXX_BITSIZE_INT_N_0,
 	  __INT_N_201103 (__GLIBCXX_TYPE_INT_N_0),
@@ -1661,7 +1662,7 @@ _GLIBCXX_BEGIN_NAMESPACE_VERSION
 	  __INT_N_U201103 (__GLIBCXX_TYPE_INT_N_3))
 #endif
 
-#elif defined __STRICT_ANSI__ && defined __SIZEOF_INT128__
+#if defined __STRICT_ANSI__ && defined __SIZEOF_INT128__
   __INT_N(__int128, 128,
 	  __INT_N_201103 (__int128),
 	  __INT_N_U201103 (__int128))
@@ -2129,7 +2130,7 @@ __glibcxx_float_n(128)
       static _GLIBCXX_USE_CONSTEXPR int digits = 113;
       static _GLIBCXX_USE_CONSTEXPR int digits10 = 33;
 #if __cplusplus >= 201103L
-      static constexpr int max_digits10 = 35;
+      static constexpr int max_digits10 = 36;
 #endif
       static _GLIBCXX_USE_CONSTEXPR bool is_signed = true;
       static _GLIBCXX_USE_CONSTEXPR bool is_integer = false;

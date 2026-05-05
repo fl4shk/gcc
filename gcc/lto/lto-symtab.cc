@@ -1,5 +1,5 @@
 /* LTO symbol table.
-   Copyright (C) 2009-2025 Free Software Foundation, Inc.
+   Copyright (C) 2009-2026 Free Software Foundation, Inc.
    Contributed by CodeSourcery, Inc.
 
 This file is part of GCC.
@@ -61,6 +61,10 @@ lto_cgraph_replace_node (struct cgraph_node *node,
     prevailing_node->mark_force_output ();
   if (node->forced_by_abi)
     prevailing_node->forced_by_abi = true;
+  prevailing_node->ref_by_asm |= node->ref_by_asm;
+  prevailing_node->must_remain_in_tu_name |= node->must_remain_in_tu_name;
+  prevailing_node->must_remain_in_tu_body |= node->must_remain_in_tu_body;
+
   if (node->address_taken)
     {
       gcc_assert (!prevailing_node->inlined_to);
@@ -121,6 +125,9 @@ lto_varpool_replace_node (varpool_node *vnode,
     prevailing_node->force_output = true;
   if (vnode->forced_by_abi)
     prevailing_node->forced_by_abi = true;
+  prevailing_node->ref_by_asm |= vnode->ref_by_asm;
+  prevailing_node->must_remain_in_tu_name |= vnode->must_remain_in_tu_name;
+  prevailing_node->must_remain_in_tu_body |= vnode->must_remain_in_tu_body;
 
   /* Be sure we can garbage collect the initializer.  */
   if (DECL_INITIAL (vnode->decl)
@@ -176,7 +183,7 @@ lto_varpool_replace_node (varpool_node *vnode,
   vnode->remove ();
 }
 
-/* Return non-zero if we want to output waring about T1 and T2.
+/* Return non-zero if we want to output warning about T1 and T2.
    Return value is a bitmask of reasons of violation:
    Bit 0 indicates that types are not compatible.
    Bit 1 indicates that types are not compatible because of C++ ODR rule.
@@ -953,11 +960,7 @@ lto_symtab_merge_symbols_1 (symtab_node *prevailing)
 	  else
 	    {
 	      DECL_INITIAL (e->decl) = error_mark_node;
-	      if (e->lto_file_data)
-		{
-		  lto_free_function_in_decl_state_for_node (e);
-		  e->lto_file_data = NULL;
-		}
+	      lto_free_function_in_decl_state_for_node (e);
 	      symtab->call_varpool_removal_hooks (dyn_cast<varpool_node *> (e));
 	    }
 	  e->remove_all_references ();
@@ -1016,7 +1019,6 @@ lto_symtab_merge_symbols (void)
 		  || node->resolution == LDPR_RESOLVED_EXEC
 		  || node->resolution == LDPR_RESOLVED_DYN))
 	    {
-	      DECL_EXTERNAL (node->decl) = 1;
 	      /* If alias to local symbol was preempted by external definition,
 		 we know it is not pointing to the local symbol.  Remove it.  */
 	      if (node->alias
@@ -1041,7 +1043,9 @@ lto_symtab_merge_symbols (void)
 		      node->analyzed = node->definition = false;
 		      node->remove_all_references ();
 		    }
+		  node->body_removed = true;
 		}
+	      DECL_EXTERNAL (node->decl) = 1;
 	    }
 
 	  if (!(cnode = dyn_cast <cgraph_node *> (node))

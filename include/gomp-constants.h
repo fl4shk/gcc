@@ -1,6 +1,6 @@
 /* Communication between GCC and libgomp.
 
-   Copyright (C) 2014-2025 Free Software Foundation, Inc.
+   Copyright (C) 2014-2026 Free Software Foundation, Inc.
 
    Contributed by Mentor Embedded.
 
@@ -209,7 +209,13 @@ enum gomp_map_kind
     GOMP_MAP_PRESENT_ALLOC =		(GOMP_MAP_LAST | 4),
     GOMP_MAP_PRESENT_TO =		(GOMP_MAP_LAST | 5),
     GOMP_MAP_PRESENT_FROM =		(GOMP_MAP_LAST | 6),
-    GOMP_MAP_PRESENT_TOFROM =		(GOMP_MAP_LAST | 7)
+    GOMP_MAP_PRESENT_TOFROM =		(GOMP_MAP_LAST | 7),
+    /* Unset, used for "declare mapper" maps with no explicit data movement
+       specified.  These use the movement specified at the invocation site.  */
+    GOMP_MAP_UNSET =			(GOMP_MAP_LAST | 8),
+    /* Used to record the name of a named mapper.  */
+    GOMP_MAP_PUSH_MAPPER_NAME =		(GOMP_MAP_LAST | 9),
+    GOMP_MAP_POP_MAPPER_NAME =		(GOMP_MAP_LAST | 10)
   };
 
 #define GOMP_MAP_COPY_TO_P(X) \
@@ -280,10 +286,14 @@ enum gomp_map_kind
    omp_invalid_device) to -3 (so that for dev_num >= -2U we can
    subtract 1).  -4 is then what we use for omp_invalid_device,
    which unlike the other non-conforming device numbers results
-   in fatal error regardless of OMP_TARGET_OFFLOAD.  */
+   in fatal error regardless of OMP_TARGET_OFFLOAD.
+   Furthermore, OpenMP 6.1 exposes the default device to the user; hence,
+   GOMP_DEVICE_DEFAULT_OMP_61 can be used for it,
+   with and without remapped device numbers.  */
 #define GOMP_DEVICE_ICV			-1
 #define GOMP_DEVICE_HOST_FALLBACK	-2
 #define GOMP_DEVICE_INVALID		-4
+#define GOMP_DEVICE_DEFAULT_OMP_61	-5
 
 /* GOMP_task/GOMP_taskloop* flags argument.  */
 #define GOMP_TASK_FLAG_UNTIED		(1 << 0)
@@ -385,7 +395,12 @@ enum gomp_map_kind
 /* Predefined allocator value ranges.  */
 #define GOMP_OMP_PREDEF_ALLOC_MAX	8
 #define GOMP_OMPX_PREDEF_ALLOC_MIN	200
-#define GOMP_OMPX_PREDEF_ALLOC_MAX	200
+#define GOMP_OMPX_PREDEF_ALLOC_MAX	201
+
+/* Predefined memspace value ranges.  */
+#define GOMP_OMP_PREDEF_MEMSPACE_MAX	4
+#define GOMP_OMPX_PREDEF_MEMSPACE_MIN	200
+#define GOMP_OMPX_PREDEF_MEMSPACE_MAX	200
 
 /* Predefined allocator with access == thread.  */
 #define GOMP_OMP_PREDEF_ALLOC_THREADS	8
@@ -405,6 +420,13 @@ enum gomp_map_kind
 #define GOMP_INTEROP_IFR_LAST	7
 #define GOMP_INTEROP_IFR_SEPARATOR ((char)(-__INT8_MAX__-1))
 #define GOMP_INTEROP_IFR_UNKNOWN ((char)(-__INT8_MAX__))
+
+/* GOMP_interop target_targetsync argument.  */
+#define GOMP_INTEROP_TARGET	(1 << 0)
+#define GOMP_INTEROP_TARGETSYNC	(1 << 1)
+
+/* GOMP_interop flags argument.  */
+#define GOMP_INTEROP_FLAG_NOWAIT	(1 << 0)
 
 /* HSA specific data structures.  */
 

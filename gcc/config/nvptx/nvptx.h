@@ -1,5 +1,5 @@
 /* Target Definitions for NVPTX.
-   Copyright (C) 2014-2025 Free Software Foundation, Inc.
+   Copyright (C) 2014-2026 Free Software Foundation, Inc.
    Contributed by Bernd Schmidt <bernds@codesourcery.com>
 
    This file is part of GCC.
@@ -77,6 +77,8 @@
 #define LONG_LONG_TYPE_SIZE 64
 #define TARGET_SUPPORTS_WIDE_INT 1
 
+#define MAX_FIXED_MODE_SIZE 128
+
 #undef SIZE_TYPE
 #define SIZE_TYPE (TARGET_ABI64 ? "long unsigned int" : "unsigned int")
 #undef PTRDIFF_TYPE
@@ -97,8 +99,10 @@
 
 /* There are no 'TARGET_PTX_3_1' and smaller conditionals: our baseline is
    PTX ISA Version 3.1.  */
+#define TARGET_PTX_4_0 (ptx_version_option >= PTX_VERSION_4_0)
 #define TARGET_PTX_4_1 (ptx_version_option >= PTX_VERSION_4_1)
 #define TARGET_PTX_4_2 (ptx_version_option >= PTX_VERSION_4_2)
+#define TARGET_PTX_5_0 (ptx_version_option >= PTX_VERSION_5_0)
 #define TARGET_PTX_6_0 (ptx_version_option >= PTX_VERSION_6_0)
 #define TARGET_PTX_6_3 (ptx_version_option >= PTX_VERSION_6_3)
 #define TARGET_PTX_7_0 (ptx_version_option >= PTX_VERSION_7_0)
@@ -273,9 +277,6 @@ struct GTY(()) machine_function
 
 #define DEBUGGER_REGNO(N) N
 
-#define TEXT_SECTION_ASM_OP ""
-#define DATA_SECTION_ASM_OP ""
-
 #undef  ASM_GENERATE_INTERNAL_LABEL
 #define ASM_GENERATE_INTERNAL_LABEL(LABEL, PREFIX, NUM)		\
   do								\
@@ -380,8 +381,20 @@ struct GTY(()) machine_function
 /* See 'libgcc/config/nvptx/crt0.c' for wrapping of 'main'.  */
 #define HAS_INIT_SECTION
 
-/* The C++ front end insists to link against libstdc++ -- which we don't build.
-   Tell it to instead link against the innocuous libgcc.  */
-#define LIBSTDCXX "gcc"
+/* The default doesn't fly ('internal compiler error: in simplify_subreg' when
+   'dw2_assemble_integer' -> 'assemble_integer' attempts to simplify
+   '(minus:DI (symbol_ref:DI ("$LEHB0")) (symbol_ref:DI ("$LFB3")))', for
+   example.  Just emit something; it's not getting used, anyway.  */
+#define ASM_OUTPUT_DWARF_DELTA(STREAM, SIZE, LABEL1, LABEL2) \
+  do \
+    { \
+      fprintf (STREAM, "%s[%d]: ", targetm.asm_out.byte_op, SIZE); \
+      const char *label1 = LABEL1; \
+      assemble_name_raw (STREAM, label1 ? label1 : "*nil"); \
+      fprintf (STREAM, " - "); \
+      const char *label2 = LABEL2; \
+      assemble_name_raw (STREAM, label2 ? label2 : "*nil"); \
+    } \
+  while (0)
 
 #endif /* GCC_NVPTX_H */

@@ -1,5 +1,5 @@
 /* Consolidation of svalues and regions.
-   Copyright (C) 2020-2025 Free Software Foundation, Inc.
+   Copyright (C) 2020-2026 Free Software Foundation, Inc.
    Contributed by David Malcolm <dmalcolm@redhat.com>.
 
 This file is part of GCC.
@@ -31,7 +31,7 @@ namespace ana {
 class region_model_manager
 {
 public:
-  region_model_manager (logger *logger = NULL);
+  region_model_manager (logger *logger = nullptr);
   ~region_model_manager ();
 
   unsigned get_num_symbols () const { return m_next_symbol_id; }
@@ -73,11 +73,13 @@ public:
 					   const svalue *inner_svalue);
   const svalue *get_or_create_unmergeable (const svalue *arg);
   const svalue *get_or_create_widening_svalue (tree type,
-					       const function_point &point,
+					       const supernode *snode,
 					       const svalue *base_svalue,
 					       const svalue *iter_svalue);
   const svalue *get_or_create_compound_svalue (tree type,
-					       const binding_map &map);
+					       concrete_binding_map &&map);
+  const svalue *get_or_create_compound_svalue (tree type,
+					       const concrete_binding_map &map);
   const svalue *get_or_create_conjured_svalue (tree type, const gimple *stmt,
 					       const region *id_reg,
 					       const conjured_purge &p,
@@ -98,8 +100,12 @@ public:
 					tree fndecl,
 					const vec<const svalue *> &inputs);
 
+  const svalue *maybe_get_char_from_cst (tree data_cst,
+					 tree byte_offset_cst);
   const svalue *maybe_get_char_from_string_cst (tree string_cst,
 						tree byte_offset_cst);
+  const svalue *maybe_get_char_from_raw_data_cst (tree raw_data_cst,
+						  tree byte_offset_cst);
 
   /* Dynamically-allocated svalue instances.
      The number of these within the analysis can grow arbitrarily.
@@ -177,6 +183,9 @@ private:
   bool too_complex_p (const complexity &c) const;
   bool reject_if_too_complex (svalue *sval);
 
+  const svalue *
+  maybe_invert_comparison_in_unaryop (tree type,
+				      const binop_svalue *binop);
   const svalue *maybe_fold_unaryop (tree type, enum tree_code op,
 				    const svalue *arg);
   const svalue *maybe_fold_sub_svalue (tree type,
